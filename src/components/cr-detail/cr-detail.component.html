@@ -74,16 +74,25 @@
 		<!-- Actions -->
 		<section class="cr-actions" [attr.aria-busy]="submitting">
 			<p *ngIf="actionError" class="cr-actions__error" role="alert">{{ actionError }}</p>
-			<p *ngIf="submitting" class="cr-actions__submitting" role="status">Processing approval…</p>
+			<p *ngIf="submitting" class="cr-actions__submitting" role="status">Processing request…</p>
 
 			<button type="button" class="cr-actions__approve" [disabled]="!canApprove || submitting" (click)="approve()">Approve</button>
 
 			<div class="cr-actions__reject" *ngIf="canReject">
 				<label>
 					Reason for rejection
-					<textarea class="cr-actions__reason" [formControl]="rejectControl" [readOnly]="submitting"></textarea>
+					<textarea
+						class="cr-actions__reason"
+						[formControl]="rejectControl"
+						[readOnly]="submitting"
+						aria-required="true"
+						[attr.aria-invalid]="rejectControl.invalid && rejectControl.touched"
+						[attr.aria-describedby]="rejectControl.invalid && rejectControl.touched ? 'cr-reject-reason-error' : null"
+					></textarea>
 				</label>
-				<p *ngIf="rejectControl.invalid && rejectControl.touched" class="cr-actions__reason-error" role="alert">Please enter a reason.</p>
+				<p *ngIf="rejectControl.invalid && rejectControl.touched" id="cr-reject-reason-error" class="cr-actions__reason-error" role="alert">
+					Please enter a rejection reason, not just whitespace.
+				</p>
 				<button
 					type="button"
 					class="cr-actions__reject-btn"

@@ -706,3 +706,287 @@ describe('CrDetailComponent approve action', () => {
 		expect(approve).toHaveBeenCalledTimes(1);
 	});
 });
+
+const rejectedDetail: CrDetail = {
+	...details['CR-1'],
+	status: 'REJECTED',
+	updatedAt: '2026-03-02T11:00:00.000Z',
+	audit: [...details['CR-1'].audit, { action: 'REJECT', byUserId: 'mona', at: '2026-03-02T11:00:00.000Z', note: 'Please revise' }],
+};
+
+async function rejectionFixture(detail = details['CR-1'], user = users.approver) {
+	const context = await approvalFixture(detail, user);
+	const reject = jest.fn();
+	TestBed.inject(CrApiService).reject = reject;
+	return { ...context, reject };
+}
+
+function enterReason(fixture: ComponentFixture<CrDetailComponent>, value: string): void {
+	const textarea: HTMLTextAreaElement = fixture.nativeElement.querySelector('.cr-actions__reason');
+	textarea.value = value;
+	textarea.dispatchEvent(new Event('input'));
+	textarea.dispatchEvent(new Event('blur'));
+	fixture.detectChanges();
+}
+
+describe('CrDetailComponent reject action', () => {
+	it('rechecks selection and current user permissions inside the handler', async () => {
+		const { fixture, reject } = await rejectionFixture();
+		enterReason(fixture, 'Please revise');
+		fixture.componentInstance.id = 'CR-2';
+		await fixture.componentInstance.reject();
+		fixture.componentInstance.id = 'CR-1';
+		TestBed.inject(SessionService).user = users.viewer;
+		await fixture.componentInstance.reject();
+		expect(reject).not.toHaveBeenCalled();
+	});
+
+	it('blocks direct rejection while the newly selected detail is loading', async () => {
+		const { fixture, reject, getChangeRequest, select } = await rejectionFixture();
+		const response = deferred<CrDetail>();
+		getChangeRequest.mockReturnValueOnce(response.promise);
+		select('CR-3');
+		fixture.componentInstance.rejectControl.setValue('Please revise');
+		await fixture.componentInstance.reject();
+		expect(reject).not.toHaveBeenCalled();
+		response.resolve(details['CR-3']);
+		await response.promise;
+	});
+
+	it('ignores old rejection reconciliation without clearing a new selection reason', async () => {
+		const { fixture, reject, getChangeRequest, select } = await rejectionFixture();
+		enterReason(fixture, 'Please revise');
+		const failure = deferred<CrDetail>();
+		const refresh = deferred<CrDetail>();
+		reject.mockReturnValueOnce(failure.promise);
+		getChangeRequest.mockReturnValueOnce(refresh.promise);
+		const pending = fixture.componentInstance.reject();
+		failure.reject(new Error('Network error'));
+		await Promise.resolve();
+		getChangeRequest.mockResolvedValueOnce(details['CR-3']);
+		select('CR-3');
+		await Promise.resolve();
+		fixture.componentInstance.rejectControl.setValue('New selection reason');
+		refresh.resolve(rejectedDetail);
+		await pending;
+		fixture.detectChanges();
+		expect(fixture.componentInstance.detail.id).toBe('CR-3');
+		expect(fixture.componentInstance.rejectControl.value).toBe('New selection reason');
+		expect(fixture.nativeElement.querySelector('.cr-actions__error')).toBeNull();
+	});
+
+	it('rejects from the DOM with a trimmed reason and renders status and audit, then resets the form', async () => {
+		const { fixture, reject } = await rejectionFixture();
+		const response = deferred<CrDetail>();
+		reject.mockReturnValueOnce(response.promise);
+		enterReason(fixture, '  Please revise \n');
+		expect(fixture.nativeElement.querySelector('.cr-actions__reject-btn').disabled).toBe(false);
+		fixture.nativeElement.querySelector('.cr-actions__reject-btn').click();
+		expect(reject).toHaveBeenCalledTimes(1);
+		const [user, id, at, reason] = reject.mock.calls[0];
+		expect(user).toBe(users.approver);
+		expect(id).toBe('CR-1');
+		expect(new Date(at).toISOString()).toBe(at);
+		expect(reason).toBe('Please revise');
+		response.resolve(rejectedDetail);
+		await response.promise;
+		fixture.detectChanges();
+		expect(fixture.nativeElement.querySelector('.cr-detail__header .cr-status').textContent).toBe('REJECTED');
+		expect(timelineActions(fixture)).toEqual(['CREATE', 'SUBMIT', 'SEND_FOR_APPROVAL', 'REJECT']);
+		expect(fixture.nativeElement.querySelector('.cr-timeline__note').textContent).toBe('Please revise');
+		expect(fixture.componentInstance.rejectControl.value).toBe('');
+		expect(fixture.componentInstance.rejectControl.touched).toBe(false);
+		expect(fixture.nativeElement.querySelector('.cr-actions__reject')).toBeNull();
+	});
+
+	it.each(['', '   ', '\n\t '])('blocks an invalid reason %p and links accessible feedback to the textarea', async (reason) => {
+		const { fixture, reject } = await rejectionFixture();
+		enterReason(fixture, reason);
+		await fixture.componentInstance.reject();
+		fixture.detectChanges();
+		expect(reject).not.toHaveBeenCalled();
+		expect(fixture.componentInstance.rejectControl.invalid).toBe(true);
+		expect(fixture.nativeElement.querySelector('.cr-actions__reject-btn').disabled).toBe(true);
+		const textarea: HTMLTextAreaElement = fixture.nativeElement.querySelector('.cr-actions__reason');
+		const error: HTMLElement = fixture.nativeElement.querySelector('.cr-actions__reason-error');
+		expect(textarea.getAttribute('aria-required')).toBe('true');
+		expect(textarea.getAttribute('aria-invalid')).toBe('true');
+		expect(textarea.getAttribute('aria-describedby')).toBe(error.id);
+		expect(error.getAttribute('role')).toBe('alert');
+		expect(error.textContent).toContain('Please enter a rejection reason');
+		enterReason(fixture, 'Valid reason');
+		expect(fixture.nativeElement.querySelector('.cr-actions__reason-error')).toBeNull();
+		expect(textarea.getAttribute('aria-invalid')).toBe('false');
+		expect(textarea.getAttribute('aria-describedby')).toBeNull();
+	});
+
+	it('marks an untouched invalid control as touched on direct invocation', async () => {
+		const { fixture, reject } = await rejectionFixture();
+		expect(fixture.componentInstance.rejectControl.touched).toBe(false);
+		await fixture.componentInstance.reject();
+		fixture.detectChanges();
+		expect(fixture.nativeElement.querySelector('.cr-actions__reason-error')).not.toBeNull();
+		expect(reject).not.toHaveBeenCalled();
+	});
+
+	it('blocks a read-only user with a valid reason even on direct invocation', async () => {
+		const { fixture, reject } = await rejectionFixture(details['CR-1'], users.viewer);
+		fixture.componentInstance.rejectControl.setValue('Please revise');
+		await fixture.componentInstance.reject();
+		expect(reject).not.toHaveBeenCalled();
+		expect(fixture.nativeElement.querySelector('.cr-actions__reject')).toBeNull();
+	});
+
+	it.each(['CR-2', 'CR-3'])('blocks rejection of non-pending %s', async (id) => {
+		const { fixture, reject } = await rejectionFixture(details[id]);
+		fixture.componentInstance.rejectControl.setValue('Please revise');
+		await fixture.componentInstance.reject();
+		expect(reject).not.toHaveBeenCalled();
+	});
+
+	it.each(['approve', 'reject'])('blocks duplicate and overlapping actions while %s is pending', async (action: 'approve' | 'reject') => {
+		const { fixture, approve, reject } = await rejectionFixture();
+		enterReason(fixture, 'Please revise');
+		const response = deferred<CrDetail>();
+		approve.mockReturnValue(response.promise);
+		reject.mockReturnValue(response.promise);
+		const pending = fixture.componentInstance[action]();
+		fixture.detectChanges();
+		await fixture.componentInstance.approve();
+		await fixture.componentInstance.reject();
+		expect(approve).toHaveBeenCalledTimes(action === 'approve' ? 1 : 0);
+		expect(reject).toHaveBeenCalledTimes(action === 'reject' ? 1 : 0);
+		expect(fixture.nativeElement.querySelector('.cr-actions__approve').disabled).toBe(true);
+		expect(fixture.nativeElement.querySelector('.cr-actions__reject-btn').disabled).toBe(true);
+		expect(fixture.nativeElement.querySelector('.cr-actions__reason').readOnly).toBe(true);
+		expect(fixture.nativeElement.querySelector('.cr-actions').getAttribute('aria-busy')).toBe('true');
+		expect(fixture.nativeElement.querySelector('.cr-actions__submitting').textContent).toContain('Processing request');
+		response.resolve(action === 'approve' ? approvedDetail : rejectedDetail);
+		await pending;
+		expect(fixture.componentInstance.submitting).toBe(false);
+	});
+
+	it('reconciles a failed rejection once, retaining the reason when the current status remains pending', async () => {
+		const { fixture, reject, approve, getChangeRequest } = await rejectionFixture();
+		enterReason(fixture, ' Please revise ');
+		const failure = deferred<CrDetail>();
+		const refresh = deferred<CrDetail>();
+		reject.mockReturnValueOnce(failure.promise);
+		getChangeRequest.mockReturnValueOnce(refresh.promise);
+		const pending = fixture.componentInstance.reject();
+		failure.reject(new Error('Network error'));
+		await Promise.resolve();
+		fixture.detectChanges();
+		expect(fixture.nativeElement.querySelector('.cr-actions__error').textContent).toContain('Rejection response failed');
+		await fixture.componentInstance.reject();
+		await fixture.componentInstance.approve();
+		expect(fixture.componentInstance.submitting).toBe(true);
+		refresh.resolve(details['CR-1']);
+		await pending;
+		fixture.detectChanges();
+		expect(getChangeRequest).toHaveBeenCalledTimes(2);
+		expect(fixture.nativeElement.querySelector('.cr-actions__error').textContent).toContain('Current status: PENDING_APPROVAL');
+		expect(fixture.componentInstance.rejectControl.value).toBe(' Please revise ');
+		expect(fixture.nativeElement.querySelector('.cr-actions__reason').readOnly).toBe(false);
+		expect(reject).toHaveBeenCalledTimes(1);
+		expect(approve).not.toHaveBeenCalled();
+	});
+
+	it('reports an unknown outcome when rejection and read fail, allowing only a read on Retry', async () => {
+		const { fixture, reject, getChangeRequest } = await rejectionFixture();
+		enterReason(fixture, 'Please revise');
+		const failure = deferred<CrDetail>();
+		const refresh = deferred<CrDetail>();
+		reject.mockReturnValueOnce(failure.promise);
+		getChangeRequest.mockReturnValueOnce(refresh.promise);
+		const pending = fixture.componentInstance.reject();
+		failure.reject(new Error('Network error'));
+		await Promise.resolve();
+		refresh.reject(new Error('Read unavailable'));
+		await pending;
+		fixture.detectChanges();
+		expect(fixture.nativeElement.querySelector('.cr-detail__error').textContent).toContain('Rejection outcome is unknown');
+		expect(fixture.nativeElement.querySelector('.cr-actions')).toBeNull();
+		expect(fixture.componentInstance.rejectControl.value).toBe('Please revise');
+		await fixture.componentInstance.reject();
+		getChangeRequest.mockResolvedValueOnce(rejectedDetail);
+		fixture.nativeElement.querySelector('.cr-detail__error button').click();
+		await Promise.resolve();
+		fixture.detectChanges();
+		expect(fixture.componentInstance.detail.status).toBe('REJECTED');
+		expect(reject).toHaveBeenCalledTimes(1);
+	});
+
+	it('reconciles real failNext rejection to REJECTED with a single trimmed audit note', async () => {
+		jest.useFakeTimers();
+		try {
+			TestBed.configureTestingModule({ imports: [CrDetailComponent] });
+			await TestBed.compileComponents();
+			const api = TestBed.inject(CrApiService);
+			api.latencyMs = 25;
+			const rejectSpy = jest.spyOn(api, 'reject');
+			const readSpy = jest.spyOn(api, 'getChangeRequest');
+			const fixture = TestBed.createComponent(CrDetailComponent);
+			fixture.componentRef.setInput('id', 'CR-1');
+			fixture.detectChanges();
+			jest.advanceTimersByTime(25);
+			await Promise.resolve();
+			fixture.componentInstance.rejectControl.setValue('  Please revise  ');
+			api.failNext = true;
+			const pending = fixture.componentInstance.reject();
+			jest.advanceTimersByTime(25);
+			await Promise.resolve();
+			expect(fixture.componentInstance.submitting).toBe(true);
+			jest.advanceTimersByTime(25);
+			await pending;
+			fixture.detectChanges();
+			expect(fixture.nativeElement.querySelector('.cr-detail__header .cr-status').textContent).toBe('REJECTED');
+			expect(fixture.nativeElement.querySelector('.cr-actions__error').textContent).toContain('Current status: REJECTED');
+			expect(fixture.nativeElement.querySelector('.cr-timeline__note').textContent).toBe('Please revise');
+			expect(fixture.componentInstance.detail.audit.filter((entry) => entry.action === 'REJECT').length).toBe(1);
+			expect(fixture.componentInstance.rejectControl.value).toBe('');
+			expect(rejectSpy).toHaveBeenCalledTimes(1);
+			expect(readSpy).toHaveBeenCalledTimes(2);
+		} finally {
+			jest.useRealTimers();
+		}
+	});
+
+	it.each(['resolve', 'reject'])('ignores an old rejection %s and clears the reason for a new selection', async (outcome) => {
+		const { fixture, reject, getChangeRequest, select } = await rejectionFixture();
+		enterReason(fixture, 'Please revise');
+		const response = deferred<CrDetail>();
+		reject.mockReturnValueOnce(response.promise);
+		const pending = fixture.componentInstance.reject();
+		getChangeRequest.mockResolvedValueOnce(details['CR-3']);
+		select('CR-3');
+		await Promise.resolve();
+		if (outcome === 'resolve') response.resolve(rejectedDetail);
+		else response.reject(new Error('Old rejection failed'));
+		await pending;
+		fixture.detectChanges();
+		expect(fixture.componentInstance.detail.id).toBe('CR-3');
+		expect(fixture.componentInstance.rejectControl.value).toBe('');
+		expect(fixture.nativeElement.querySelector('.cr-actions__error')).toBeNull();
+		expect(getChangeRequest).toHaveBeenCalledTimes(2);
+	});
+
+	it.each(['resolve', 'reject'])('ignores rejection %s after destruction', async (outcome) => {
+		const { fixture, reject, getChangeRequest } = await rejectionFixture();
+		enterReason(fixture, 'Please revise');
+		const response = deferred<CrDetail>();
+		reject.mockReturnValueOnce(response.promise);
+		const pending = fixture.componentInstance.reject();
+		fixture.destroy();
+		const previousState = fixture.componentInstance.state;
+		if (outcome === 'resolve') response.resolve(rejectedDetail);
+		else response.reject(new Error('Old rejection failed'));
+		await pending;
+		expect(fixture.componentInstance.state).toBe(previousState);
+		expect(fixture.componentInstance.rejectControl.value).toBe('Please revise');
+		expect(fixture.componentInstance.actionError).toBeUndefined();
+		expect(getChangeRequest).toHaveBeenCalledTimes(1);
+		await fixture.componentInstance.reject();
+		expect(reject).toHaveBeenCalledTimes(1);
+	});
+});

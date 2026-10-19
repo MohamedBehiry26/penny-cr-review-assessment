@@ -11,8 +11,7 @@ import { canApprovePolicy } from '../../common/permissions';
 
 /**
  * Change Request DETAIL page: loads a CR and renders the diff/preview, the approval timeline, and
- * permission-aware Approve/Reject actions. `load`, the diff binding, and the template skeleton are
- * provided; the timeline ordering, permission gating, actions, and reject validation are yours.
+ * permission-aware Approve/Reject actions, including rejection validation and error reconciliation.
  */
 @Component({
 	selector: 'app-cr-detail',
@@ -26,15 +25,20 @@ export class CrDetailComponent implements OnChanges, OnDestroy {
 	state: ViewState<CrDetail> = idle();
 	submitting = false;
 	actionError?: string;
-	// TODO: add validation so the form is invalid until a reason is entered.
-	rejectControl = new FormControl('', { nonNullable: true });
+	rejectControl = new FormControl('', {
+		nonNullable: true,
+		validators: [(control) => (control.value.trim() ? null : { required: true })],
+	});
 	private loadRequest = 0;
 	private destroyed = false;
 
 	constructor(private readonly api: CrApiService, private readonly session: SessionService) {}
 
 	ngOnChanges(changes: SimpleChanges): void {
-		if (changes['id']) void this.load();
+		if (changes['id']) {
+			this.rejectControl.reset('');
+			void this.load();
+		}
 	}
 
 	ngOnDestroy(): void {
@@ -93,54 +97,66 @@ export class CrDetailComponent implements OnChanges, OnDestroy {
 	}
 
 	async approve(): Promise<void> {
+		await this.submitAction('approve');
+	}
+
+	async reject(): Promise<void> {
+		await this.submitAction('reject');
+	}
+
+	private async submitAction(action: 'approve' | 'reject'): Promise<void> {
 		const detail = this.detail;
 		const user = this.session.user;
 		if (
 			this.destroyed ||
 			this.submitting ||
 			this.state.status !== 'loaded' ||
-			!this.canApprove ||
+			!(action === 'approve' ? this.canApprove : this.canReject) ||
 			detail.id !== this.id ||
 			detail.orgCode !== user.orgCode
 		)
 			return;
+		if (action === 'reject' && this.rejectControl.invalid) {
+			this.rejectControl.markAsTouched();
+			return;
+		}
 
+		const reason = this.rejectControl.value.trim();
+		const label = action === 'approve' ? 'Approval' : 'Rejection';
 		const request = this.loadRequest;
 		const isCurrent = () => request === this.loadRequest && !this.destroyed && this.session.user === user;
 		this.submitting = true;
 		this.actionError = undefined;
 		try {
-			const updated = await this.api.approve(user, detail.id, new Date().toISOString());
-			if (isCurrent()) this.state = { status: 'loaded', data: updated };
+			const at = new Date().toISOString();
+			const updated = await (action === 'approve' ? this.api.approve(user, detail.id, at) : this.api.reject(user, detail.id, at, reason));
+			if (!isCurrent()) return;
+			this.state = { status: 'loaded', data: updated };
+			if (action === 'reject' && updated.status === 'REJECTED') this.rejectControl.reset('');
 		} catch (err) {
 			if (!isCurrent()) return;
 			const message = (err as Error).message;
-			this.actionError = `Approval response failed: ${message}. Checking current status.`;
+			this.actionError = `${label} response failed: ${message}. Checking current status.`;
 			// The mock store may already have changed. Read once; never retry the mutation automatically.
 			try {
 				const refreshed = await this.api.getChangeRequest(user, detail.id);
 				if (!isCurrent()) return;
 				this.state = { status: 'loaded', data: refreshed };
-				this.actionError = `Approval response failed: ${message}. Current status: ${refreshed.status}. Approval was not retried.`;
+				if (action === 'reject' && refreshed.status === 'REJECTED') this.rejectControl.reset('');
+				this.actionError = `${label} response failed: ${message}. Current status: ${refreshed.status}. ${label} was not retried.`;
 			} catch (refreshError) {
 				if (!isCurrent()) return;
 				this.state = {
 					status: 'error',
 					data: null,
-					error: `Approval outcome is unknown (${message}). Could not refresh: ${
+					error: `${label} outcome is unknown (${message}). Could not refresh: ${
 						(refreshError as Error).message
-					}. Retry reloads the current status without approving again.`,
+					}. Retry reloads the current status without ${action === 'approve' ? 'approving' : 'rejecting'} again.`,
 				};
 			}
 		} finally {
 			// Keep the shared action lock until this operation (including reconciliation) finishes.
 			if (!this.destroyed) this.submitting = false;
 		}
-	}
-
-	async reject(): Promise<void> {
-		// TODO: require a valid rejectControl, then perform the reject action through the API and
-		//       reflect the outcome in the view.
-		throw new Error('reject() not implemented');
 	}
 }
