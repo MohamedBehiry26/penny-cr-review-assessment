@@ -166,6 +166,36 @@ async function refreshFixture(): Promise<ComponentFixture<CrListComponent>> {
 }
 
 describe('CrListComponent refresh safety', () => {
+	it('highlights only the input selection and moves aria-current with it', async () => {
+		const fixture = await refreshFixture();
+		const selectSpy = jest.spyOn(fixture.componentInstance.select, 'emit');
+		fixture.componentRef.setInput('selectedId', 'CR-1');
+		fixture.detectChanges();
+		expect(fixture.nativeElement.querySelector('.cr-list__row--selected button').textContent.trim()).toBe('CR-1');
+		expect(fixture.nativeElement.querySelectorAll('[aria-current="true"]').length).toBe(1);
+		fixture.componentRef.setInput('selectedId', 'CR-2');
+		fixture.detectChanges();
+		expect(fixture.nativeElement.querySelector('.cr-list__row--selected button').textContent.trim()).toBe('CR-2');
+		expect(fixture.nativeElement.querySelector('[aria-label="Review CR-1"]').hasAttribute('aria-current')).toBe(false);
+		expect(fixture.nativeElement.querySelector('[aria-selected]')).toBeNull();
+		expect(selectSpy).not.toHaveBeenCalled();
+	});
+
+	it('retains selection through filter hide/show without emitting or mutating rows', async () => {
+		const fixture = await refreshFixture();
+		fixture.componentRef.setInput('selectedId', 'CR-1');
+		fixture.detectChanges();
+		const source = fixture.componentInstance.state.data;
+		const selectSpy = jest.spyOn(fixture.componentInstance.select, 'emit');
+		changeFilter(fixture, 'DRAFT');
+		expect(fixture.nativeElement.querySelector('.cr-list__row--selected')).toBeNull();
+		expect(fixture.componentInstance.selectedId).toBe('CR-1');
+		changeFilter(fixture, 'ALL');
+		expect(fixture.nativeElement.querySelector('.cr-list__row--selected button').textContent.trim()).toBe('CR-1');
+		expect(fixture.componentInstance.state.data).toBe(source);
+		expect(selectSpy).not.toHaveBeenCalled();
+	});
+
 	it('offers a native keyboard-focusable selection button without double emitting', async () => {
 		const fixture = await refreshFixture();
 		const button: HTMLButtonElement = fixture.nativeElement.querySelector('.cr-list__row button');

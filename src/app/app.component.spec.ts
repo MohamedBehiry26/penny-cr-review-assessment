@@ -47,6 +47,36 @@ function clickAction(fixture: ComponentFixture<AppComponent>, action: string): v
 describe('AppComponent List/Detail integration', () => {
 	afterEach(() => jest.useRealTimers());
 
+	it('propagates button selection once and keeps the highlight after focus leaves', async () => {
+		const { fixture } = await appFixture();
+		const list = fixture.debugElement.query(By.directive(CrListComponent)).componentInstance;
+		const selectSpy = jest.spyOn(list.select, 'emit');
+		const button: HTMLButtonElement = fixture.nativeElement.querySelector('[aria-label="Review CR-2"]');
+		button.focus();
+		// Native Enter/Space activation produces a click; jsdom does not synthesize it from keydown.
+		button.click();
+		fixture.detectChanges();
+		fixture.nativeElement.querySelector('.cr-list__filter').focus();
+		expect(selectSpy).toHaveBeenCalledTimes(1);
+		expect(selectSpy).toHaveBeenCalledWith('CR-2');
+		expect(fixture.componentInstance.selectedId).toBe('CR-2');
+		expect(fixture.nativeElement.querySelector('.cr-list__row--selected button')).toBe(button);
+		expect(button.getAttribute('aria-current')).toBe('true');
+	});
+
+	it.each(['viewer', 'otherOrg'])('clears the persistent highlight when switching to %s', async (user) => {
+		const { fixture } = await appFixture();
+		expect(fixture.nativeElement.querySelector('.cr-list__row--selected')).not.toBeNull();
+		fixture.componentInstance.switchUser(user);
+		fixture.detectChanges();
+		await advanceApi(fixture);
+		await advanceApi(fixture);
+		expect(fixture.componentInstance.selectedId).toBeNull();
+		expect(fixture.debugElement.query(By.directive(CrListComponent)).componentInstance.selectedId).toBeNull();
+		expect(fixture.nativeElement.querySelector('.cr-list__row--selected')).toBeNull();
+		expect(fixture.nativeElement.querySelector('[aria-current]')).toBeNull();
+	});
+
 	it('does not claim a changed status when an old selection action and its reconciliation both fail', async () => {
 		const { fixture, api, listSpy } = await appFixture();
 		api.failNext = true;
@@ -106,10 +136,14 @@ describe('AppComponent List/Detail integration', () => {
 		if (filter === 'ALL') {
 			expect(fixture.nativeElement.querySelectorAll('.cr-list__row').length).toBe(3);
 			expect(fixture.nativeElement.querySelector('.cr-list__row .cr-status').textContent).toBe(status);
+			expect(fixture.nativeElement.querySelector('.cr-list__row--selected button').textContent.trim()).toBe('CR-1');
 		} else {
 			expect(fixture.nativeElement.querySelectorAll('.cr-list__row').length).toBe(0);
 			expect(fixture.nativeElement.querySelector('.cr-list__no-matches')).not.toBeNull();
 			expect(fixture.nativeElement.querySelector('.cr-list__empty')).toBeNull();
+			expect(fixture.nativeElement.querySelector('.cr-list__row--selected')).toBeNull();
+			filterBy(fixture, 'ALL');
+			expect(fixture.nativeElement.querySelector('.cr-list__row--selected button').textContent.trim()).toBe('CR-1');
 		}
 	});
 

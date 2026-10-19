@@ -94,6 +94,17 @@ export class CrDetailComponent implements OnChanges, OnDestroy {
 		return [...(this.detail?.audit ?? [])].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
 	}
 
+	/** Fixed English month names and UTC fields avoid locale/timezone-dependent output. */
+	formatTimestamp(value: string): string {
+		const date = new Date(value);
+		if (Number.isNaN(date.getTime())) return value;
+		const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+		const pad = (part: number) => String(part).padStart(2, '0');
+		return `${pad(date.getUTCDate())} ${months[date.getUTCMonth()]} ${date.getUTCFullYear()}, ${pad(date.getUTCHours())}:${pad(
+			date.getUTCMinutes(),
+		)} UTC`;
+	}
+
 	/** Whether the current user may approve the loaded CR. */
 	get canApprove(): boolean {
 		return this.detail?.status === 'PENDING_APPROVAL' && canApprovePolicy(this.session.user);

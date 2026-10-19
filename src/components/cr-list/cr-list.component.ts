@@ -1,4 +1,4 @@
-import { Component, EventEmitter, OnDestroy, OnInit, Output } from '@angular/core';
+import { Component, EventEmitter, Input, OnDestroy, OnInit, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { CrApiService } from '../../api/cr-api.service';
 import { SessionService } from '../../session/session.service';
@@ -16,6 +16,7 @@ import { idle, loading, ViewState } from '../../common/view-state';
 	templateUrl: './cr-list.component.html',
 })
 export class CrListComponent implements OnInit, OnDestroy {
+	@Input() selectedId: string | null = null;
 	@Output() select = new EventEmitter<string>();
 
 	state: ViewState<CrSummary[]> = idle();

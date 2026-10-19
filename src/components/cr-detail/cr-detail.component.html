@@ -64,7 +64,7 @@
 			<ol *ngIf="entries.length > 0" class="cr-timeline__list">
 				<li *ngFor="let entry of entries" class="cr-timeline__entry">
 					<span class="cr-timeline__action">{{ entry.action }}</span> · <span class="cr-timeline__by">{{ entry.byUserId }}</span> ·
-					<time class="cr-timeline__at" [attr.datetime]="entry.at">{{ entry.at }}</time>
+					<time class="cr-timeline__at" [attr.datetime]="entry.at">{{ formatTimestamp(entry.at) }}</time>
 					<ng-container *ngIf="entry.note">
 						· <span class="cr-timeline__note">{{ entry.note }}</span></ng-container
 					>

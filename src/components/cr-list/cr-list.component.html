@@ -32,9 +32,19 @@
 			</tr>
 		</thead>
 		<tbody>
-			<tr *ngFor="let cr of visibleRows" class="cr-list__row" (click)="select.emit(cr.id)">
+			<tr
+				*ngFor="let cr of visibleRows"
+				class="cr-list__row"
+				[class.cr-list__row--selected]="cr.id === selectedId"
+				(click)="select.emit(cr.id)"
+			>
 				<td>
-					<button type="button" [attr.aria-label]="'Review ' + cr.id" (click)="select.emit(cr.id); $event.stopPropagation()">
+					<button
+						type="button"
+						[attr.aria-label]="'Review ' + cr.id"
+						[attr.aria-current]="cr.id === selectedId ? 'true' : null"
+						(click)="select.emit(cr.id); $event.stopPropagation()"
+					>
 						{{ cr.id }}
 					</button>
 				</td>

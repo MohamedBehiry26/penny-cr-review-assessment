@@ -415,9 +415,9 @@ describe('CrDetailComponent audit timeline', () => {
 		const { fixture } = await renderTimeline(details['CR-1'].audit);
 		expect(timelineActions(fixture)).toEqual(['CREATE', 'SUBMIT', 'SEND_FOR_APPROVAL']);
 		expect(Array.from(fixture.nativeElement.querySelectorAll('.cr-timeline__at'), (element: HTMLElement) => element.textContent)).toEqual([
-			'2026-03-02T09:00:00.000Z',
-			'2026-03-02T09:30:00.000Z',
-			'2026-03-02T10:00:00.000Z',
+			'02 Mar 2026, 09:00 UTC',
+			'02 Mar 2026, 09:30 UTC',
+			'02 Mar 2026, 10:00 UTC',
 		]);
 	});
 
@@ -446,6 +446,19 @@ describe('CrDetailComponent audit timeline', () => {
 		expect(timelineActions(fixture)).toEqual(['CREATE', 'SUBMIT', 'SEND_FOR_APPROVAL', 'APPROVE']);
 	});
 
+	it('formats offset timestamps in UTC while retaining the exact source datetime', async () => {
+		const at = '2026-01-01T00:05:30.123+02:00';
+		const { fixture } = await renderTimeline([{ action: 'CREATE', byUserId: 'alice', at }]);
+		const time: HTMLTimeElement = fixture.nativeElement.querySelector('time');
+		expect(time.textContent).toBe('31 Dec 2025, 22:05 UTC');
+		expect(time.getAttribute('datetime')).toBe(at);
+	});
+
+	it('preserves an invalid timestamp instead of inventing a date', async () => {
+		const { fixture } = await renderTimeline([{ action: 'CREATE', byUserId: 'alice', at: 'invalid' }]);
+		expect(fixture.nativeElement.querySelector('time').textContent).toBe('invalid');
+	});
+
 	it('shows a clear empty message instead of an empty list', async () => {
 		const { fixture } = await renderTimeline([]);
 		expect(fixture.nativeElement.querySelector('.cr-timeline__empty').textContent).toBe('No audit history available.');
@@ -463,12 +476,10 @@ describe('CrDetailComponent audit timeline', () => {
 		expect(entries[0].querySelector('.cr-timeline__note')).toBeNull();
 		expect(entries[1].querySelector('.cr-timeline__action').textContent).toBe('REJECT');
 		expect(entries[1].querySelector('.cr-timeline__by').textContent).toBe('mona');
-		expect(entries[1].querySelector('.cr-timeline__at').textContent).toBe('2026-03-02T10:00:00.000Z');
+		expect(entries[1].querySelector('.cr-timeline__at').textContent).toBe('02 Mar 2026, 10:00 UTC');
 		expect(entries[1].querySelector('time').getAttribute('datetime')).toBe('2026-03-02T10:00:00.000Z');
 		expect(entries[1].querySelector('.cr-timeline__note').textContent).toBe('Please revise the quantity.');
-		expect(entries[1].textContent.replace(/\s+/g, ' ').trim()).toBe(
-			'REJECT · mona · 2026-03-02T10:00:00.000Z · Please revise the quantity.',
-		);
+		expect(entries[1].textContent.replace(/\s+/g, ' ').trim()).toBe('REJECT · mona · 02 Mar 2026, 10:00 UTC · Please revise the quantity.');
 		expect(fixture.nativeElement.querySelector('.cr-timeline__empty')).toBeNull();
 	});
 
@@ -534,7 +545,7 @@ describe('CrDetailComponent approve action', () => {
 		expect(timelineActions(fixture)).toEqual(['CREATE', 'SUBMIT', 'SEND_FOR_APPROVAL', 'APPROVE']);
 		const events = fixture.nativeElement.querySelectorAll('.cr-timeline__entry');
 		expect(events[3].querySelector('.cr-timeline__by').textContent).toBe('mona');
-		expect(events[3].querySelector('.cr-timeline__at').textContent).toBe(approvedDetail.updatedAt);
+		expect(events[3].querySelector('.cr-timeline__at').textContent).toBe('02 Mar 2026, 11:00 UTC');
 		expect(fixture.componentInstance.submitting).toBe(false);
 		expect(fixture.nativeElement.querySelector('.cr-actions__approve').disabled).toBe(true);
 		expect(fixture.nativeElement.querySelector('.cr-actions__reject')).toBeNull();
