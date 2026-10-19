@@ -1,90 +1,102 @@
-# Change Request Review UI — Frontend Exercise (Angular)
+# Change Request Review UI - Angular Assessment
 
-A small **Angular** exercise for a procurement platform. You'll complete the UI an approver uses to
-review and act on **Change Requests (CRs)** — proposed amendments to a live Purchase Agreement.
+An Angular reviewer UI for **Change Requests (CRs)**: proposed amendments to a live Purchase Agreement.
+Reviewers can filter requests, inspect line-item changes and audit history, and approve or reject pending requests according to the supplied policy helper.
 
-You do **not** build a backend. A mock API service (`src/api/cr-api.service.ts`) with realistic fixtures
-is provided; treat it as the contract your components talk to. Start with
-[`CANDIDATE_BRIEF.md`](./CANDIDATE_BRIEF.md) for the scenario, tasks, and acceptance criteria.
+This assessment uses the provided organization-scoped mock API (`src/api/cr-api.service.ts`); no backend was built.
+See [CANDIDATE_BRIEF.md](./CANDIDATE_BRIEF.md) for the original scenario, tasks, acceptance criteria, and submission instructions.
+See [IMPLEMENTATION_NOTES.md](./IMPLEMENTATION_NOTES.md) for architecture, decisions, known limitations, verification details, and transparent AI assistance disclosure.
 
-## Stack & setup
+## Stack and setup
 
-Angular 15 (standalone components, reactive forms). It's a real, runnable app: `npm start` serves the UI
-in a browser, and `npm test` renders the components via `jest-preset-angular` (TestBed in jsdom). Plain
-HTML/CSS.
+Angular 15 standalone components, reactive forms, TypeScript, plain HTML/CSS, and Jest with Angular TestBed in jsdom.
+Use **Node 18.20.3** as specified in `.nvmrc`; the verified npm version is **10.7.0**. `package.json` allows Node `>=18.20.0 <19` and does not pin npm. Do not assume compatibility with other Node major versions.
+
+From the repository root, activate Node 18.20.3 using your version manager or a session-local portable runtime, then run:
 
 ```bash
-nvm use            # Node 18.20.3
-npm ci             # uses .npmrc (legacy-peer-deps) — please keep it
-npm start          # ng serve -> http://localhost:4200  (run the UI to click through / record your demo)
-npm test           # Jest — two tests fail on purpose; fixing them is task 1
-npm run build      # ng build (production)
-npm run lint
-npm run format
+node -v
+npm -v
+npm ci
+npm start
 ```
 
-### Running the UI
+If your version manager supports `.nvmrc`, `nvm use` selects the requested version. On nvm-windows, select it explicitly with `nvm use 18.20.3` after installing that version. A version manager is optional.
+Keep the supplied `package-lock.json` and `.npmrc` (`legacy-peer-deps=true`); use `npm ci` for the locked install.
+`npm start` runs `ng serve` at http://localhost:4200. Stop it with Ctrl+C.
 
-`npm start` boots a small demo shell (`src/app/`) that hosts the list + detail screens. Use the
-**"Acting as"** switcher in the header to change the current user (approver / viewer / other-org) so you
-can show your permission-aware action states in the walkthrough video. The shell is just glue for the
-demo — the exercise itself is the list/detail components and their templates.
+## Verification commands
+
+```bash
+npm test -- --runInBand
+npm run typecheck
+npm run lint
+npm run build
+```
+
+`build` uses the production configuration and writes to `dist/cr-review`. `lint` checks TypeScript.
+Optional commands: `npm run test:watch` for Jest watch mode and `npm run format` to **rewrite TypeScript formatting**.
+For a non-writing formatting check, use `npm exec --no -- prettier --check <file paths>` with explicit paths.
+
+An isolated local Git clone at commit `395f898` was verified on the same Windows machine using Node 18.20.3 / npm 10.7.0:
+`npm ci`, **130/130 Jest tests**, typecheck, lint, and production build all passed.
+`npm start` served HTTP 200, and a Chrome smoke test covered List/Detail loading, selection, filtering, and action gating.
+The install reported 100 npm audit vulnerabilities (3 low, 18 moderate, 75 high, 4 critical) and deprecation warnings; no dependency upgrades or audit fixes were applied.
+This is a mock-backed assessment, not a production security or accessibility certification.
+
+## Implemented behavior
+
+- List loading, error/retry, API-empty, and filter-no-match states; status filtering preserves source rows and active selection.
+- Persistent selected-row highlighting and native keyboard-accessible Review buttons.
+- Detail reloads on selection changes and ignores stale asynchronous results.
+- Added, removed, changed, and unchanged line-item previews, with quantity, description, unit price, totals, and delta.
+- Chronological audit history with stable ties, readable UTC timestamps, and original ISO values in `<time datetime>`.
+- Status- and permission-aware Approve/Reject handlers, nonblank trimmed rejection reasons, and a shared submission lock.
+- Reconciliation after failed action responses, explicit unknown outcomes, read-only retry, and List refresh after confirmed status changes.
+- Responsive CSS, visible keyboard focus, and accessible progress/validation feedback using existing semantic controls.
+
+Use the **Acting as** switcher to try approver, viewer, and otherOrg fixtures. Switching users clears selection and reloads the panes.
+The mock API exposes `latencyMs` and `failNext` for deterministic tests of slow/failing responses.
 
 ## Policy-string convention
 
-The current user (from `SessionService`) carries permission strings shaped **`cr_{action}_{scope}`**:
+`SessionService` supplies the current user and policies shaped `cr_{action}_{scope}`.
 
-| action | meaning | | scope | meaning |
-|---|---|---|---|---|
-| `r` | read | | `u` | user — own CRs |
-| `a` | approve | | `w` | workspace |
-| `x` | apply | | `o` | org |
+| Action | Meaning |
+| --- | --- |
+| `r` | Read |
+| `a` | Approve |
+| `x` | Apply |
 
-e.g. `cr_a_o` = may approve any CR in the org; a user with only `cr_r_o` is read-only. The UI must only
-offer/enable an action the current user is actually permitted to perform.
+| Scope | Meaning |
+| --- | --- |
+| `u` | User (own CRs) |
+| `w` | Workspace |
+| `o` | Organization |
 
-## CR statuses (read-only context)
+For example, `cr_a_o` denotes organization approval permission; `cr_r_o` alone is read-only.
+The existing approval helper accepts any approval-scope policy. Ownership/workspace metadata is unavailable, so the UI cannot independently enforce narrower scopes.
+The mock API checks organization but does not fully enforce authorization or transitions; frontend guards do not replace backend security.
 
-`DRAFT → SUBMITTED → PENDING_APPROVAL → APPROVED → APPLIED`, with `REJECTED` / `CANCELLED` terminal.
-Approve/Reject act on a `PENDING_APPROVAL` CR. You consume these statuses; you don't drive backend
-transitions.
+## CR statuses
 
-## Where to work
+`DRAFT -> SUBMITTED -> PENDING_APPROVAL -> APPROVED -> APPLIED`, with `REJECTED` / `CANCELLED` terminal.
+Approve and Reject act only on `PENDING_APPROVAL` in the UI. The API owns transitions; the frontend consumes its responses.
 
-- `src/components/cr-list/cr-list.component.{ts,html}` — list page; the **status filter**
-  (`visibleRows`) is a TODO.
-- `src/components/cr-detail/cr-detail.component.{ts,html}` — detail page; **timeline ordering**,
-  **permission-aware** `canApprove`/`canReject`, the **approve/reject actions**, and **reject-reason
-  validation** are yours.
-- `src/components/diff.util.ts` — the preview-panel diff; its change-detection has a defect surfaced by
-  `diff.spec.ts`.
+## Component map and testing
 
-The visible tests are a starting point, not the full specification.
+- `src/app/`: selection, Acting-as switching, and parent-child List/Detail synchronization.
+- `src/components/cr-list/`: summaries, status filtering, selection, and List states.
+- `src/components/cr-detail/`: detail lifecycle, preview, timeline, actions, validation, and reconciliation.
+- `src/components/diff.util.ts`: pure SKU-based line-item classification.
+- `src/models/`, `src/common/`, `src/api/`, `src/session/`: supplied models, view state, money/policy helpers, fixtures, mock API, and session.
+- `src/styles.css`: responsive visual presentation.
 
-## Testing components
+Tests include `src/app/app.component.spec.ts`, List/Detail component specs, and `src/components/diff.spec.ts`.
+Component tests render with `detectChanges()`, settle the API, then render again. Deferred Promises and fake timers control race scenarios.
+The two original starter defects are fixed; the original tests remain part of the expanded suite. Tests supplement the assessment brief rather than replace its requirements.
 
-Component tests use `TestBed` and assert on rendered DOM. The mock API resolves on a timer, so tests are
-real `async`: render with `detectChanges()`, let the API settle, then `detectChanges()` again. See the
-provided `*.component.spec.ts` files for the exact pattern (it's a 6-line helper you can copy).
+## Assessment submission
 
-## Files
-
-```
-src/
-  models/cr.models.ts              # CrSummary, CrDetail, LineItem, TimelineEntry, ReqUser
-  common/                          # view-state, money.util, permissions (policy helpers)
-  api/                             # fixtures + CrApiService (mock, org-scoped, latency/failNext)
-  session/session.service.ts       # current user
-  components/
-    diff.util.ts                   # baseline-vs-proposed line-item diff
-    cr-list/cr-list.component.{ts,html}
-    cr-detail/cr-detail.component.{ts,html}
-    diff.spec.ts                            # one failing case to start from
-    cr-list/cr-list.component.spec.ts       # passing example (loaded / empty render)
-    cr-detail/cr-detail.component.spec.ts   # one failing case to start from
-```
-
-## A note on AI tools
-
-Using AI tools is allowed and expected — see the brief for the (light) disclosure policy. The follow-up
-interview is built around your own code, so make sure you understand what you submit.
+Preserve the full Git commit history without squashing, include root-level implementation notes, and provide the required **5-8 minute screen recording** showing List/Detail, a rejection, an error state, and one non-trivial decision.
+Clean-clone installation/testing is required by the brief. AI use is permitted and disclosed in the implementation notes; be prepared to explain and modify the submitted code in the follow-up interview.
