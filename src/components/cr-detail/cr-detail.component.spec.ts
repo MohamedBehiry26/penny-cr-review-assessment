@@ -2,7 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { CrDetailComponent } from './cr-detail.component';
 import { SessionService } from '../../session/session.service';
 import { details, users } from '../../api/fixtures';
-import { CrDetail, LineItem, ReqUser } from '../../models/cr.models';
+import { CrDetail, LineItem, ReqUser, TimelineEntry } from '../../models/cr.models';
 import { CrApiService } from '../../api/cr-api.service';
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -368,5 +368,107 @@ describe('CrDetailComponent diff preview and totals', () => {
 		expect(row.querySelector(kind === 'added' ? '.cr-diff__before' : '.cr-diff__after').textContent.trim()).toBe('—');
 		expect(fixture.nativeElement.querySelector('.cr-diff__empty')).toBeNull();
 		expect(fixture.nativeElement.querySelector('.cr-diff__unchanged')).toBeNull();
+	});
+});
+
+async function renderTimeline(audit: TimelineEntry[]) {
+	const context = await selectionFixture();
+	const response: CrDetail = JSON.parse(JSON.stringify({ ...details['CR-1'], audit }));
+	const snapshot = JSON.parse(JSON.stringify(response));
+	response.audit.forEach(Object.freeze);
+	Object.freeze(response.audit);
+	Object.freeze(response);
+	context.getChangeRequest.mockResolvedValueOnce(response);
+	context.select(response.id);
+	await Promise.resolve();
+	context.fixture.detectChanges();
+	return { ...context, response, snapshot };
+}
+
+function timelineActions(fixture: ComponentFixture<CrDetailComponent>): string[] {
+	return Array.from(fixture.nativeElement.querySelectorAll('.cr-timeline__action'), (element: HTMLElement) => element.textContent.trim());
+}
+
+describe('CrDetailComponent audit timeline', () => {
+	it('renders unsorted audit events oldest first', async () => {
+		const { fixture } = await renderTimeline(details['CR-1'].audit);
+		expect(timelineActions(fixture)).toEqual(['CREATE', 'SUBMIT', 'SEND_FOR_APPROVAL']);
+		expect(Array.from(fixture.nativeElement.querySelectorAll('.cr-timeline__at'), (element: HTMLElement) => element.textContent)).toEqual([
+			'2026-03-02T09:00:00.000Z',
+			'2026-03-02T09:30:00.000Z',
+			'2026-03-02T10:00:00.000Z',
+		]);
+	});
+
+	it('retains the order of an already chronological audit history', async () => {
+		const { fixture } = await renderTimeline(details['CR-2'].audit);
+		expect(timelineActions(fixture)).toEqual(['CREATE', 'APPROVE', 'APPLY']);
+	});
+
+	it('preserves original relative order for events with equal timestamps', async () => {
+		const { fixture } = await renderTimeline([
+			{ action: 'SUBMIT', byUserId: 'alice', at: '2026-03-02T10:00:00.000Z' },
+			{ action: 'CREATE', byUserId: 'alice', at: '2026-03-02T09:00:00.000Z' },
+			{ action: 'SEND_FOR_APPROVAL', byUserId: 'alice', at: '2026-03-02T10:00:00.000Z' },
+			{ action: 'APPROVE', byUserId: 'mona', at: '2026-03-02T10:00:00.000Z' },
+		]);
+		expect(timelineActions(fixture)).toEqual(['CREATE', 'SUBMIT', 'SEND_FOR_APPROVAL', 'APPROVE']);
+	});
+
+	it('orders ISO timestamps by instant including timezone offsets and keeps equivalent instants stable', async () => {
+		const { fixture } = await renderTimeline([
+			{ action: 'APPROVE', byUserId: 'mona', at: '2026-03-02T09:30:00.000Z' },
+			{ action: 'SUBMIT', byUserId: 'alice', at: '2026-03-02T11:00:00.000+02:00' },
+			{ action: 'CREATE', byUserId: 'alice', at: '2026-03-02T08:00:00.000Z' },
+			{ action: 'SEND_FOR_APPROVAL', byUserId: 'alice', at: '2026-03-02T09:00:00.000Z' },
+		]);
+		expect(timelineActions(fixture)).toEqual(['CREATE', 'SUBMIT', 'SEND_FOR_APPROVAL', 'APPROVE']);
+	});
+
+	it('shows a clear empty message instead of an empty list', async () => {
+		const { fixture } = await renderTimeline([]);
+		expect(fixture.nativeElement.querySelector('.cr-timeline__empty').textContent).toBe('No audit history available.');
+		expect(fixture.nativeElement.querySelector('.cr-timeline__list')).toBeNull();
+		expect(timelineActions(fixture)).toEqual([]);
+	});
+
+	it('renders the provided action, user id, timestamp and optional note without inventing metadata', async () => {
+		const { fixture } = await renderTimeline([
+			{ action: 'CREATE', byUserId: 'alice', at: '2026-03-02T09:00:00.000Z' },
+			{ action: 'REJECT', byUserId: 'mona', at: '2026-03-02T10:00:00.000Z', note: 'Please revise the quantity.' },
+		]);
+		const entries: NodeListOf<HTMLLIElement> = fixture.nativeElement.querySelectorAll('.cr-timeline__entry');
+		expect(entries.length).toBe(2);
+		expect(entries[0].querySelector('.cr-timeline__note')).toBeNull();
+		expect(entries[1].querySelector('.cr-timeline__action').textContent).toBe('REJECT');
+		expect(entries[1].querySelector('.cr-timeline__by').textContent).toBe('mona');
+		expect(entries[1].querySelector('.cr-timeline__at').textContent).toBe('2026-03-02T10:00:00.000Z');
+		expect(entries[1].querySelector('time').getAttribute('datetime')).toBe('2026-03-02T10:00:00.000Z');
+		expect(entries[1].querySelector('.cr-timeline__note').textContent).toBe('Please revise the quantity.');
+		expect(fixture.nativeElement.querySelector('.cr-timeline__empty')).toBeNull();
+	});
+
+	it('sorts a copy without mutating frozen API arrays or event objects', async () => {
+		const { fixture, response, snapshot } = await renderTimeline(details['CR-1'].audit);
+		fixture.detectChanges();
+		expect(timelineActions(fixture)).toEqual(['CREATE', 'SUBMIT', 'SEND_FOR_APPROVAL']);
+		expect(fixture.componentInstance.timeline).not.toBe(response.audit);
+		expect(response).toEqual(snapshot);
+		expect(response.audit.map((entry) => entry.action)).toEqual(['SEND_FOR_APPROVAL', 'SUBMIT', 'CREATE']);
+	});
+
+	it('clears the old timeline while loading and renders the newly selected CR history', async () => {
+		const { fixture, getChangeRequest, select } = await renderTimeline(details['CR-1'].audit);
+		expect(timelineActions(fixture)).toEqual(['CREATE', 'SUBMIT', 'SEND_FOR_APPROVAL']);
+		const response = deferred<CrDetail>();
+		getChangeRequest.mockReturnValueOnce(response.promise);
+		select('CR-2');
+		expect(fixture.nativeElement.querySelector('.cr-timeline')).toBeNull();
+		expect(fixture.nativeElement.querySelector('.cr-detail__loading')).not.toBeNull();
+		response.resolve(details['CR-2']);
+		await response.promise;
+		fixture.detectChanges();
+		expect(timelineActions(fixture)).toEqual(['CREATE', 'APPROVE', 'APPLY']);
+		expect(fixture.nativeElement.querySelector('.cr-timeline__empty')).toBeNull();
 	});
 });

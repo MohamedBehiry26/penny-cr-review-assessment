@@ -58,13 +58,14 @@
 		</section>
 
 		<!-- Approval timeline -->
-		<section class="cr-timeline">
+		<section class="cr-timeline" *ngIf="timeline as entries">
 			<h3>Timeline</h3>
-			<ol class="cr-timeline__list">
-				<li *ngFor="let entry of timeline" class="cr-timeline__entry">
+			<p *ngIf="entries.length === 0" class="cr-timeline__empty">No audit history available.</p>
+			<ol *ngIf="entries.length > 0" class="cr-timeline__list">
+				<li *ngFor="let entry of entries" class="cr-timeline__entry">
 					<span class="cr-timeline__action">{{ entry.action }}</span>
 					<span class="cr-timeline__by">{{ entry.byUserId }}</span>
-					<span class="cr-timeline__at">{{ entry.at }}</span>
+					<time class="cr-timeline__at" [attr.datetime]="entry.at">{{ entry.at }}</time>
 					<span *ngIf="entry.note" class="cr-timeline__note">{{ entry.note }}</span>
 				</li>
 			</ol>

@@ -73,8 +73,8 @@ export class CrDetailComponent implements OnChanges, OnDestroy {
 
 	/** Approval timeline, oldest-first. */
 	get timeline(): TimelineEntry[] {
-		// TODO: return the audit entries ordered chronologically (oldest first).
-		return this.detail?.audit ?? [];
+		// Array.sort is stable: equal timestamps retain the API's relative order.
+		return [...(this.detail?.audit ?? [])].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
 	}
 
 	/** Whether the current user may approve the loaded CR. */
