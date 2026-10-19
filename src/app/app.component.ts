@@ -4,6 +4,7 @@ import { CrListComponent } from '../components/cr-list/cr-list.component';
 import { CrDetailComponent } from '../components/cr-detail/cr-detail.component';
 import { SessionService } from '../session/session.service';
 import { users } from '../api/fixtures';
+import { CrDetail } from '../models/cr.models';
 
 /**
  * Demo app shell that hosts the list + detail screens so you can click through the UI in a browser
@@ -28,11 +29,16 @@ export class AppComponent {
 
 	switchUser(key: string): void {
 		this.session.user = users[key];
+		this.selectedId = null;
 		this.reload();
 	}
 
 	onSelect(id: string): void {
 		this.selectedId = id;
+	}
+
+	onDetailUpdated(detail: CrDetail, list: CrListComponent): void {
+		if (this.show && detail.id === this.selectedId && detail.orgCode === this.session.user.orgCode) void list.load();
 	}
 
 	/** Destroy + recreate the panes so they re-load as the newly selected user. */

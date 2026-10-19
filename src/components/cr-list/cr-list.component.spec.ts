@@ -1,8 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { CrListComponent } from './cr-list.component';
 import { SessionService } from '../../session/session.service';
-import { users } from '../../api/fixtures';
-import { ReqUser } from '../../models/cr.models';
+import { summaries, users } from '../../api/fixtures';
+import { CrSummary, ReqUser } from '../../models/cr.models';
 import { CrApiService } from '../../api/cr-api.service';
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -134,5 +134,106 @@ describe('CrListComponent', () => {
 		expect(fixture.nativeElement.querySelector('.cr-list__loading')).toBeNull();
 		expect(fixture.nativeElement.querySelector('.cr-list__filter').value).toBe('APPLIED');
 		expect(renderedIds(fixture)).toEqual(['CR-2']);
+	});
+});
+
+function deferredRows() {
+	let resolve!: (rows: CrSummary[]) => void;
+	let reject!: (error: Error) => void;
+	const promise = new Promise<CrSummary[]>((resolvePromise, rejectPromise) => {
+		resolve = resolvePromise;
+		reject = rejectPromise;
+	});
+	return { promise, resolve, reject };
+}
+
+async function refreshFixture(): Promise<ComponentFixture<CrListComponent>> {
+	const listChangeRequests = jest.fn().mockResolvedValue(summaries.slice(0, 3));
+	TestBed.configureTestingModule({
+		imports: [CrListComponent],
+		providers: [
+			{ provide: SessionService, useValue: { user: users.approver } },
+			{ provide: CrApiService, useValue: { listChangeRequests } },
+		],
+	});
+	await TestBed.compileComponents();
+	const fixture = TestBed.createComponent(CrListComponent);
+	fixture.detectChanges();
+	await Promise.resolve();
+	fixture.detectChanges();
+	listChangeRequests.mockClear();
+	return fixture;
+}
+
+describe('CrListComponent refresh safety', () => {
+	it.each(['resolve', 'reject'])('ignores an older refresh that completes with %s', async (outcome) => {
+		const fixture = await refreshFixture();
+		const api = TestBed.inject(CrApiService);
+		const older = deferredRows();
+		const newer = deferredRows();
+		jest.spyOn(api, 'listChangeRequests').mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
+		const firstLoad = fixture.componentInstance.load();
+		const secondLoad = fixture.componentInstance.load();
+		newer.resolve([{ ...summaries[0], status: 'APPROVED' }]);
+		await secondLoad;
+		if (outcome === 'resolve') older.resolve([summaries[0]]);
+		else older.reject(new Error('Old refresh failed'));
+		await firstLoad;
+		fixture.detectChanges();
+		expect(renderedIds(fixture)).toEqual(['CR-1']);
+		expect(fixture.nativeElement.querySelector('.cr-status').textContent).toBe('APPROVED');
+		expect(fixture.nativeElement.querySelector('.cr-list__error')).toBeNull();
+	});
+
+	it('rejects old user results even before a new-session load completes', async () => {
+		const fixture = await refreshFixture();
+		const api = TestBed.inject(CrApiService);
+		const older = deferredRows();
+		jest.spyOn(api, 'listChangeRequests').mockReturnValueOnce(older.promise).mockResolvedValueOnce([summaries[3]]);
+		const pending = fixture.componentInstance.load();
+		TestBed.inject(SessionService).user = users.otherOrg;
+		older.resolve([summaries[0]]);
+		await pending;
+		fixture.detectChanges();
+		expect(renderedIds(fixture)).toEqual([]);
+		await fixture.componentInstance.load();
+		fixture.detectChanges();
+		expect(renderedIds(fixture)).toEqual(['CR-9']);
+	});
+
+	it.each(['resolve', 'reject'])('ignores pending %s after destruction and prevents further loads', async (outcome) => {
+		const fixture = await refreshFixture();
+		const response = deferredRows();
+		const spy = jest.spyOn(TestBed.inject(CrApiService), 'listChangeRequests').mockReturnValueOnce(response.promise);
+		const pending = fixture.componentInstance.load();
+		fixture.destroy();
+		const previousState = fixture.componentInstance.state;
+		if (outcome === 'resolve') response.resolve([]);
+		else response.reject(new Error('Old refresh failed'));
+		await pending;
+		await fixture.componentInstance.load();
+		expect(fixture.componentInstance.state).toBe(previousState);
+		expect(spy).toHaveBeenCalledTimes(1);
+	});
+
+	it('preserves the filter across loading, error, retry and API-empty refresh', async () => {
+		const fixture = await refreshFixture();
+		changeFilter(fixture, 'PENDING_APPROVAL');
+		const response = deferredRows();
+		const spy = jest.spyOn(TestBed.inject(CrApiService), 'listChangeRequests').mockReturnValueOnce(response.promise);
+		const pending = fixture.componentInstance.load();
+		fixture.detectChanges();
+		expect(fixture.nativeElement.querySelector('.cr-list__loading')).not.toBeNull();
+		response.reject(new Error('Refresh failed'));
+		await pending;
+		fixture.detectChanges();
+		expect(fixture.nativeElement.querySelector('.cr-list__error').textContent).toContain('Refresh failed');
+		spy.mockResolvedValueOnce([]);
+		fixture.nativeElement.querySelector('.cr-list__error button').click();
+		await Promise.resolve();
+		fixture.detectChanges();
+		expect(fixture.nativeElement.querySelector('.cr-list__empty')).not.toBeNull();
+		expect(fixture.nativeElement.querySelector('.cr-list__no-matches')).toBeNull();
+		expect(fixture.nativeElement.querySelector('.cr-list__filter').value).toBe('PENDING_APPROVAL');
 	});
 });

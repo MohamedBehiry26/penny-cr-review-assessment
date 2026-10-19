@@ -1,4 +1,4 @@
-import { Component, EventEmitter, OnInit, Output } from '@angular/core';
+import { Component, EventEmitter, OnDestroy, OnInit, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { CrApiService } from '../../api/cr-api.service';
 import { SessionService } from '../../session/session.service';
@@ -15,7 +15,7 @@ import { idle, loading, ViewState } from '../../common/view-state';
 	imports: [CommonModule],
 	templateUrl: './cr-list.component.html',
 })
-export class CrListComponent implements OnInit {
+export class CrListComponent implements OnInit, OnDestroy {
 	@Output() select = new EventEmitter<string>();
 
 	state: ViewState<CrSummary[]> = idle();
@@ -30,6 +30,8 @@ export class CrListComponent implements OnInit {
 		'REJECTED',
 		'CANCELLED',
 	];
+	private loadRequest = 0;
+	private destroyed = false;
 
 	constructor(private readonly api: CrApiService, private readonly session: SessionService) {}
 
@@ -37,12 +39,23 @@ export class CrListComponent implements OnInit {
 		void this.load();
 	}
 
+	ngOnDestroy(): void {
+		this.destroyed = true;
+		this.loadRequest++;
+	}
+
 	async load(): Promise<void> {
+		if (this.destroyed) return;
+		const request = ++this.loadRequest;
+		const user = this.session.user;
+		const isCurrent = () => request === this.loadRequest && !this.destroyed && this.session.user === user;
 		this.state = loading();
 		try {
-			const rows = await this.api.listChangeRequests(this.session.user);
+			const rows = await this.api.listChangeRequests(user);
+			if (!isCurrent()) return;
 			this.state = { status: rows.length ? 'loaded' : 'empty', data: rows };
 		} catch (err) {
+			if (!isCurrent()) return;
 			this.state = { status: 'error', data: null, error: (err as Error).message };
 		}
 	}

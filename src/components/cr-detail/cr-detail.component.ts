@@ -1,9 +1,9 @@
-import { Component, Input, OnChanges, OnDestroy, SimpleChanges } from '@angular/core';
+import { Component, EventEmitter, Input, OnChanges, OnDestroy, Output, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { CrApiService } from '../../api/cr-api.service';
 import { SessionService } from '../../session/session.service';
-import { CrDetail, TimelineEntry } from '../../models/cr.models';
+import { CrDetail, ReqUser, TimelineEntry } from '../../models/cr.models';
 import { idle, loading, ViewState } from '../../common/view-state';
 import { computeDiff, DiffRow } from '../diff.util';
 import { formatMoney } from '../../common/money.util';
@@ -21,6 +21,7 @@ import { canApprovePolicy } from '../../common/permissions';
 })
 export class CrDetailComponent implements OnChanges, OnDestroy {
 	@Input() id!: string;
+	@Output() updated = new EventEmitter<CrDetail>();
 
 	state: ViewState<CrDetail> = idle();
 	submitting = false;
@@ -31,11 +32,13 @@ export class CrDetailComponent implements OnChanges, OnDestroy {
 	});
 	private loadRequest = 0;
 	private destroyed = false;
+	private uncertainAction?: { id: string; status: CrDetail['status']; user: ReqUser };
 
 	constructor(private readonly api: CrApiService, private readonly session: SessionService) {}
 
 	ngOnChanges(changes: SimpleChanges): void {
 		if (changes['id']) {
+			this.uncertainAction = undefined;
 			this.rejectControl.reset('');
 			void this.load();
 		}
@@ -59,6 +62,11 @@ export class CrDetailComponent implements OnChanges, OnDestroy {
 			const detail = await this.api.getChangeRequest(this.session.user, this.id);
 			if (request !== this.loadRequest) return;
 			this.state = { status: 'loaded', data: detail };
+			const uncertain = this.uncertainAction;
+			if (uncertain?.id === detail.id && uncertain.user === this.session.user) {
+				this.uncertainAction = undefined;
+				if (detail.status !== uncertain.status) this.updated.emit(detail);
+			}
 		} catch (err) {
 			if (request !== this.loadRequest) return;
 			this.state = { status: 'error', data: null, error: (err as Error).message };
@@ -133,6 +141,7 @@ export class CrDetailComponent implements OnChanges, OnDestroy {
 			if (!isCurrent()) return;
 			this.state = { status: 'loaded', data: updated };
 			if (action === 'reject' && updated.status === 'REJECTED') this.rejectControl.reset('');
+			if (updated.status !== detail.status) this.updated.emit(updated);
 		} catch (err) {
 			if (!isCurrent()) return;
 			const message = (err as Error).message;
@@ -144,8 +153,10 @@ export class CrDetailComponent implements OnChanges, OnDestroy {
 				this.state = { status: 'loaded', data: refreshed };
 				if (action === 'reject' && refreshed.status === 'REJECTED') this.rejectControl.reset('');
 				this.actionError = `${label} response failed: ${message}. Current status: ${refreshed.status}. ${label} was not retried.`;
+				if (refreshed.status !== detail.status) this.updated.emit(refreshed);
 			} catch (refreshError) {
 				if (!isCurrent()) return;
+				this.uncertainAction = { id: detail.id, status: detail.status, user };
 				this.state = {
 					status: 'error',
 					data: null,
