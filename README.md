@@ -1,18 +1,73 @@
-# Change Request Review UI - Angular Assessment
+# Change Request Review Dashboard
 
-An Angular reviewer UI for **Change Requests (CRs)**: proposed amendments to a live Purchase Agreement.
-Reviewers can filter requests, inspect line-item changes and audit history, and approve or reject pending requests according to the supplied policy helper.
+An Angular application for reviewing proposed changes to Purchase Agreements: find a Change Request, compare its line items and financial impact, review its history, and approve or reject it.
 
-This assessment uses the provided organization-scoped mock API (`src/api/cr-api.service.ts`); no backend was built.
-See [CANDIDATE_BRIEF.md](./CANDIDATE_BRIEF.md) for the original scenario, tasks, acceptance criteria, and submission instructions.
-See [IMPLEMENTATION_NOTES.md](./IMPLEMENTATION_NOTES.md) for architecture, decisions, known limitations, verification details, and transparent AI assistance disclosure.
+## Overview
 
-## Stack and setup
+Built for the Penny AI frontend assessment, this project completes the supplied Angular scaffold against its organization-scoped **mock API**. No production backend is included.
 
-Angular 15 standalone components, reactive forms, TypeScript, plain HTML/CSS, and Jest with Angular TestBed in jsdom.
-Use **Node 18.20.3** as specified in `.nvmrc`; the verified npm version is **10.7.0**. `package.json` allows Node `>=18.20.0 <19` and does not pin npm. Do not assume compatibility with other Node major versions.
+The dashboard pairs a filterable Change Request List with a Detail panel. The **Acting as** switcher provides approver, read-only viewer, and other-organization fixtures for exploring permission-aware behavior.
 
-From the repository root, activate Node 18.20.3 using your version manager or a session-local portable runtime, then run:
+## Key Features
+
+- **Change Request List:** status filtering, persistent selected-row highlighting, and separate API-empty and filter-no-match messages. Filters preserve the loaded source data and selection.
+- **Diff Preview and Totals:** added, removed, changed, and unchanged line items; before/after description, quantity, and unit price; baseline total, proposed total, and delta using the response currency.
+- **Approval Timeline:** chronological events with stable ordering for equal timestamps, available actor/action/note metadata, and readable UTC dates that retain the original ISO value in `<time datetime>`.
+- **Approve and Reject:** status and permission checks in both UI and handlers, trimmed nonblank rejection reasons, and a shared lock against duplicate or overlapping submissions.
+- **Explicit Feedback:** loading, empty, error, retry, action progress, validation, and unknown-outcome states.
+- **Async Safety:** stale-response and session guards, Detail reloads on selection changes, List refresh after confirmed status changes, and reconciliation reads without automatic mutation retries.
+- **Responsive Presentation:** desktop and mobile layouts, contained table scrolling, native keyboard-accessible selection buttons, visible focus, and linked validation feedback.
+
+## Screenshots
+
+Captured from the running application using the supplied fixtures; no application data or styles were changed for these images.
+
+**Dashboard overview** - desktop List, selected Change Request, and Detail panel (1440 x 900 CSS viewport).
+
+![Change Request dashboard overview](./docs/screenshots/dashboard-overview.png)
+
+<details>
+<summary>Diff preview and financial totals</summary>
+
+The supplied CR-1 fixture shows Changed and Unchanged rows with before/after values and totals. Existing fixtures do not include Added or Removed rows, so those categories are not pictured.
+
+![Change Request diff preview and financial totals](./docs/screenshots/change-diff.png)
+
+</details>
+
+<details>
+<summary>Approval workflow and rejection validation</summary>
+
+The rejection reason field displays nonblank validation feedback. No Approve or Reject action was submitted during capture.
+
+![Rejection reason validation and action controls](./docs/screenshots/approval-workflow.png)
+
+</details>
+
+<details>
+<summary>Responsive mobile layout</summary>
+
+Full-page capture from an approximately 390 x 844 CSS viewport. Wide tables retain their horizontal scrolling within the panels.
+
+![Responsive Change Request dashboard on mobile](./docs/screenshots/responsive-mobile.png)
+
+</details>
+
+## Tech Stack
+
+| Area | Technology |
+| --- | --- |
+| Application | Angular 15.2.10, TypeScript, standalone components |
+| Forms | Angular reactive forms |
+| Testing | Jest, Angular TestBed, jest-preset-angular, jsdom |
+| Presentation | HTML and CSS with system fonts; no external UI kit |
+| Data | Supplied Promise-based mock API and fixtures |
+
+## Getting Started
+
+Use **Node.js 18.20.3** (`.nvmrc`). The verified npm version is **10.7.0**. The package engine range is `>=18.20.0 <19`; npm is not separately pinned.
+
+Activate Node 18.20.3 with your preferred version manager or session-local runtime, then run from the repository root:
 
 ```bash
 node -v
@@ -21,11 +76,10 @@ npm ci
 npm start
 ```
 
-If your version manager supports `.nvmrc`, `nvm use` selects the requested version. On nvm-windows, select it explicitly with `nvm use 18.20.3` after installing that version. A version manager is optional.
-Keep the supplied `package-lock.json` and `.npmrc` (`legacy-peer-deps=true`); use `npm ci` for the locked install.
-`npm start` runs `ng serve` at http://localhost:4200. Stop it with Ctrl+C.
+Open [http://localhost:4200](http://localhost:4200). Stop the development server with Ctrl+C.
+Keep the supplied `package-lock.json` and `.npmrc` (`legacy-peer-deps=true`) for reproducible installation.
 
-## Verification commands
+## Testing
 
 ```bash
 npm test -- --runInBand
@@ -34,69 +88,45 @@ npm run lint
 npm run build
 ```
 
-`build` uses the production configuration and writes to `dist/cr-review`. `lint` checks TypeScript.
-Optional commands: `npm run test:watch` for Jest watch mode and `npm run format` to **rewrite TypeScript formatting**.
-For a non-writing formatting check, use `npm exec --no -- prettier --check <file paths>` with explicit paths.
+**130/130 Jest tests across four suites passed** during verification of an isolated local Git clone at commit `395f898`, using Node 18.20.3 / npm 10.7.0 on the same Windows machine. Installation, typecheck, lint, and production build also passed. The development server returned HTTP 200, and a Chrome smoke test verified loading, selection, filtering, and action gating. These results do not represent GitHub CI or verification on another machine.
 
-An isolated local Git clone at commit `395f898` was verified on the same Windows machine using Node 18.20.3 / npm 10.7.0:
-`npm ci`, **130/130 Jest tests**, typecheck, lint, and production build all passed.
-`npm start` served HTTP 200, and a Chrome smoke test covered List/Detail loading, selection, filtering, and action gating.
-The install reported 100 npm audit vulnerabilities (3 low, 18 moderate, 75 high, 4 critical) and deprecation warnings; no dependency upgrades or audit fixes were applied.
-This is a mock-backed assessment, not a production security or accessibility certification.
+The suite covers rendered DOM, permissions, validation, diff classification, totals, timeline ordering, race conditions, and failing API responses. Deferred Promises and fake timers control race tests.
 
-## Implemented behavior
+`npm run build` writes the production output to `dist/cr-review`; lint checks TypeScript. Optional scripts are `npm run test:watch` and `npm run format` (the latter rewrites TypeScript formatting).
 
-- List loading, error/retry, API-empty, and filter-no-match states; status filtering preserves source rows and active selection.
-- Persistent selected-row highlighting and native keyboard-accessible Review buttons.
-- Detail reloads on selection changes and ignores stale asynchronous results.
-- Added, removed, changed, and unchanged line-item previews, with quantity, description, unit price, totals, and delta.
-- Chronological audit history with stable ties, readable UTC timestamps, and original ISO values in `<time datetime>`.
-- Status- and permission-aware Approve/Reject handlers, nonblank trimmed rejection reasons, and a shared submission lock.
-- Reconciliation after failed action responses, explicit unknown outcomes, read-only retry, and List refresh after confirmed status changes.
-- Responsive CSS, visible keyboard focus, and accessible progress/validation feedback using existing semantic controls.
+## Architecture
 
-Use the **Acting as** switcher to try approver, viewer, and otherOrg fixtures. Switching users clears selection and reloads the panes.
-The mock API exposes `latencyMs` and `failNext` for deterministic tests of slow/failing responses.
-
-## Policy-string convention
-
-`SessionService` supplies the current user and policies shaped `cr_{action}_{scope}`.
-
-| Action | Meaning |
+| Component / Service | Responsibility |
 | --- | --- |
-| `r` | Read |
-| `a` | Approve |
-| `x` | Apply |
+| `AppComponent` | Owns selection, switches fixture users, and coordinates List/Detail updates |
+| `CrListComponent` | Loads summaries, derives filtered rows, and emits selection |
+| `CrDetailComponent` | Loads the selected CR, renders preview/history, and manages guarded actions |
+| `CrApiService` | Supplies organization-scoped mock reads and transitions |
+| `SessionService` | Holds the current fixture user |
 
-| Scope | Meaning |
-| --- | --- |
-| `u` | User (own CRs) |
-| `w` | Workspace |
-| `o` | Organization |
+App passes `selectedId` to List and Detail. List emits `select`; Detail emits `updated` after a confirmed status change so App can refresh List while retaining the filter and current selection. Component-local state and parent-child events avoid a global state library.
 
-For example, `cr_a_o` denotes organization approval permission; `cr_r_o` alone is read-only.
-The existing approval helper accepts any approval-scope policy. Ownership/workspace metadata is unavailable, so the UI cannot independently enforce narrower scopes.
-The mock API checks organization but does not fully enforce authorization or transitions; frontend guards do not replace backend security.
+Shared utilities provide pure SKU-based diff classification, currency formatting, view states, and policy checks. See [Implementation Notes](./IMPLEMENTATION_NOTES.md) for lifecycle guards, reconciliation decisions, and edge cases.
 
-## CR statuses
+## Known Limitations
 
-`DRAFT -> SUBMITTED -> PENDING_APPROVAL -> APPROVED -> APPLIED`, with `REJECTED` / `CANCELLED` terminal.
-Approve and Reject act only on `PENDING_APPROVAL` in the UI. The API owns transitions; the frontend consumes its responses.
+- The supplied mock API is not a production backend. It can mutate the store before rejecting a Promise; failed responses require reconciliation, and some outcomes remain unknown.
+- Frontend guards do not replace backend authorization. Ownership/workspace metadata and backend idempotency/concurrency guarantees are unavailable.
+- The dependency audit reported **100 findings overall** and **2 High production-only findings**, with no Critical findings in the production-only report. Remediation is required before production use; production-only counts do not prove the generated browser bundle is secure. No dependency upgrades were applied.
+- Browser smoke testing is not a comprehensive accessibility, cross-browser, or production-security audit.
 
-## Component map and testing
+## Documentation
 
-- `src/app/`: selection, Acting-as switching, and parent-child List/Detail synchronization.
-- `src/components/cr-list/`: summaries, status filtering, selection, and List states.
-- `src/components/cr-detail/`: detail lifecycle, preview, timeline, actions, validation, and reconciliation.
-- `src/components/diff.util.ts`: pure SKU-based line-item classification.
-- `src/models/`, `src/common/`, `src/api/`, `src/session/`: supplied models, view state, money/policy helpers, fixtures, mock API, and session.
-- `src/styles.css`: responsive visual presentation.
+- [Candidate Brief](./CANDIDATE_BRIEF.md): original scenario, requirements, acceptance criteria, and submission instructions.
+- [Implementation Notes](./IMPLEMENTATION_NOTES.md): architecture, invariants, verification, trade-offs, production follow-ups, and **transparent ChatGPT/Codex assistance disclosure**.
 
-Tests include `src/app/app.component.spec.ts`, List/Detail component specs, and `src/components/diff.spec.ts`.
-Component tests render with `detectChanges()`, settle the API, then render again. Deferred Promises and fake timers control race scenarios.
-The two original starter defects are fixed; the original tests remain part of the expanded suite. Tests supplement the assessment brief rather than replace its requirements.
+## Assessment Submission
 
-## Assessment submission
+The brief explicitly requests:
 
-Preserve the full Git commit history without squashing, include root-level implementation notes, and provide the required **5-8 minute screen recording** showing List/Detail, a rejection, an error state, and one non-trivial decision.
-Clean-clone installation/testing is required by the brief. AI use is permitted and disclosed in the implementation notes; be prepared to explain and modify the submitted code in the follow-up interview.
+- A Git repository with the full commit history, without squashing.
+- Root-level `IMPLEMENTATION_NOTES.md`.
+- A **5-8 minute walkthrough video** covering List and Detail, a rejection, an error state, and one non-trivial decision.
+- Working `npm ci` and `npm test` from a clean clone.
+
+The follow-up technical interview includes explaining the submitted implementation, making a live change, debugging behavior, and discussing a trade-off. AI assistance is permitted and disclosed in the implementation notes.
