@@ -72,15 +72,16 @@
 		</section>
 
 		<!-- Actions -->
-		<section class="cr-actions">
+		<section class="cr-actions" [attr.aria-busy]="submitting">
 			<p *ngIf="actionError" class="cr-actions__error" role="alert">{{ actionError }}</p>
+			<p *ngIf="submitting" class="cr-actions__submitting" role="status">Processing approval…</p>
 
 			<button type="button" class="cr-actions__approve" [disabled]="!canApprove || submitting" (click)="approve()">Approve</button>
 
 			<div class="cr-actions__reject" *ngIf="canReject">
 				<label>
 					Reason for rejection
-					<textarea class="cr-actions__reason" [formControl]="rejectControl"></textarea>
+					<textarea class="cr-actions__reason" [formControl]="rejectControl" [readOnly]="submitting"></textarea>
 				</label>
 				<p *ngIf="rejectControl.invalid && rejectControl.touched" class="cr-actions__reason-error" role="alert">Please enter a reason.</p>
 				<button

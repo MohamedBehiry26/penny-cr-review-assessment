@@ -29,6 +29,7 @@ export class CrDetailComponent implements OnChanges, OnDestroy {
 	// TODO: add validation so the form is invalid until a reason is entered.
 	rejectControl = new FormControl('', { nonNullable: true });
 	private loadRequest = 0;
+	private destroyed = false;
 
 	constructor(private readonly api: CrApiService, private readonly session: SessionService) {}
 
@@ -37,6 +38,7 @@ export class CrDetailComponent implements OnChanges, OnDestroy {
 	}
 
 	ngOnDestroy(): void {
+		this.destroyed = true;
 		// Pending Promises cannot be cancelled; invalidate their results instead.
 		this.loadRequest++;
 	}
@@ -91,8 +93,49 @@ export class CrDetailComponent implements OnChanges, OnDestroy {
 	}
 
 	async approve(): Promise<void> {
-		// TODO: perform the approve action through the API and reflect the outcome in the view.
-		throw new Error('approve() not implemented');
+		const detail = this.detail;
+		const user = this.session.user;
+		if (
+			this.destroyed ||
+			this.submitting ||
+			this.state.status !== 'loaded' ||
+			!this.canApprove ||
+			detail.id !== this.id ||
+			detail.orgCode !== user.orgCode
+		)
+			return;
+
+		const request = this.loadRequest;
+		const isCurrent = () => request === this.loadRequest && !this.destroyed && this.session.user === user;
+		this.submitting = true;
+		this.actionError = undefined;
+		try {
+			const updated = await this.api.approve(user, detail.id, new Date().toISOString());
+			if (isCurrent()) this.state = { status: 'loaded', data: updated };
+		} catch (err) {
+			if (!isCurrent()) return;
+			const message = (err as Error).message;
+			this.actionError = `Approval response failed: ${message}. Checking current status.`;
+			// The mock store may already have changed. Read once; never retry the mutation automatically.
+			try {
+				const refreshed = await this.api.getChangeRequest(user, detail.id);
+				if (!isCurrent()) return;
+				this.state = { status: 'loaded', data: refreshed };
+				this.actionError = `Approval response failed: ${message}. Current status: ${refreshed.status}. Approval was not retried.`;
+			} catch (refreshError) {
+				if (!isCurrent()) return;
+				this.state = {
+					status: 'error',
+					data: null,
+					error: `Approval outcome is unknown (${message}). Could not refresh: ${
+						(refreshError as Error).message
+					}. Retry reloads the current status without approving again.`,
+				};
+			}
+		} finally {
+			// Keep the shared action lock until this operation (including reconciliation) finishes.
+			if (!this.destroyed) this.submitting = false;
+		}
 	}
 
 	async reject(): Promise<void> {

@@ -472,3 +472,237 @@ describe('CrDetailComponent audit timeline', () => {
 		expect(fixture.nativeElement.querySelector('.cr-timeline__empty')).toBeNull();
 	});
 });
+
+const approvedDetail: CrDetail = {
+	...details['CR-1'],
+	status: 'APPROVED',
+	updatedAt: '2026-03-02T11:00:00.000Z',
+	audit: [...details['CR-1'].audit, { action: 'APPROVE', byUserId: 'mona', at: '2026-03-02T11:00:00.000Z' }],
+};
+
+async function approvalFixture(detail = details['CR-1'], user = users.approver) {
+	const context = await selectionFixture();
+	TestBed.inject(SessionService).user = user;
+	const approve = jest.fn();
+	TestBed.inject(CrApiService).approve = approve;
+	context.getChangeRequest.mockResolvedValueOnce(detail);
+	context.select(detail.id);
+	await Promise.resolve();
+	context.fixture.detectChanges();
+	return { ...context, approve };
+}
+
+describe('CrDetailComponent approve action', () => {
+	it('approves once from the DOM and renders the confirmed status and audit response', async () => {
+		const { fixture, approve } = await approvalFixture();
+		const response = deferred<CrDetail>();
+		approve.mockReturnValueOnce(response.promise);
+		fixture.nativeElement.querySelector('.cr-actions__approve').click();
+		expect(approve).toHaveBeenCalledTimes(1);
+		const [user, id, at] = approve.mock.calls[0];
+		expect(user).toBe(users.approver);
+		expect(id).toBe('CR-1');
+		expect(new Date(at).toISOString()).toBe(at);
+		response.resolve(approvedDetail);
+		await response.promise;
+		fixture.detectChanges();
+		expect(fixture.nativeElement.querySelector('.cr-detail__header .cr-status').textContent).toBe('APPROVED');
+		expect(timelineActions(fixture)).toEqual(['CREATE', 'SUBMIT', 'SEND_FOR_APPROVAL', 'APPROVE']);
+		const events = fixture.nativeElement.querySelectorAll('.cr-timeline__entry');
+		expect(events[3].querySelector('.cr-timeline__by').textContent).toBe('mona');
+		expect(events[3].querySelector('.cr-timeline__at').textContent).toBe(approvedDetail.updatedAt);
+		expect(fixture.componentInstance.submitting).toBe(false);
+		expect(fixture.nativeElement.querySelector('.cr-actions__approve').disabled).toBe(true);
+		expect(fixture.nativeElement.querySelector('.cr-actions__reject')).toBeNull();
+	});
+
+	it('blocks a read-only user even when the handler is invoked directly', async () => {
+		const { fixture, approve } = await approvalFixture(details['CR-1'], users.viewer);
+		await fixture.componentInstance.approve();
+		expect(approve).not.toHaveBeenCalled();
+		expect(fixture.nativeElement.querySelector('.cr-actions__approve').disabled).toBe(true);
+		expect(fixture.componentInstance.submitting).toBe(false);
+	});
+
+	it('rechecks the current user policy at invocation time', async () => {
+		const { fixture, approve } = await approvalFixture();
+		TestBed.inject(SessionService).user = users.viewer;
+		await fixture.componentInstance.approve();
+		expect(approve).not.toHaveBeenCalled();
+	});
+
+	it.each(['CR-2', 'CR-3'])('blocks direct approval of non-pending %s', async (id) => {
+		const { fixture, approve } = await approvalFixture(details[id]);
+		await fixture.componentInstance.approve();
+		expect(approve).not.toHaveBeenCalled();
+	});
+
+	it('prevents duplicate submissions and disables both action buttons while pending', async () => {
+		const { fixture, approve } = await approvalFixture();
+		const response = deferred<CrDetail>();
+		approve.mockReturnValueOnce(response.promise);
+		const pending = fixture.componentInstance.approve();
+		fixture.detectChanges();
+		expect(fixture.nativeElement.querySelector('.cr-actions').getAttribute('aria-busy')).toBe('true');
+		expect(fixture.nativeElement.querySelector('.cr-actions__submitting').getAttribute('role')).toBe('status');
+		expect(fixture.nativeElement.querySelector('.cr-actions__approve').disabled).toBe(true);
+		expect(fixture.nativeElement.querySelector('.cr-actions__reject-btn').disabled).toBe(true);
+		expect(fixture.nativeElement.querySelector('.cr-actions__reason').readOnly).toBe(true);
+		const rejectSpy = jest.spyOn(fixture.componentInstance, 'reject');
+		fixture.nativeElement.querySelector('.cr-actions__approve').click();
+		fixture.nativeElement.querySelector('.cr-actions__reject-btn').click();
+		await fixture.componentInstance.approve();
+		expect(approve).toHaveBeenCalledTimes(1);
+		expect(rejectSpy).not.toHaveBeenCalled();
+		response.resolve(approvedDetail);
+		await pending;
+		fixture.detectChanges();
+		expect(fixture.nativeElement.querySelector('.cr-actions').getAttribute('aria-busy')).toBe('false');
+		expect(fixture.nativeElement.querySelector('.cr-actions__submitting')).toBeNull();
+	});
+
+	it('keeps actions locked during reconciliation and reports the freshly read pending status', async () => {
+		const { fixture, approve, getChangeRequest } = await approvalFixture();
+		const failure = deferred<CrDetail>();
+		const refresh = deferred<CrDetail>();
+		approve.mockReturnValueOnce(failure.promise);
+		getChangeRequest.mockReturnValueOnce(refresh.promise);
+		const pending = fixture.componentInstance.approve();
+		failure.reject(new Error('Network error'));
+		await Promise.resolve();
+		fixture.detectChanges();
+		expect(fixture.nativeElement.querySelector('.cr-actions__error').textContent).toContain('Checking current status');
+		expect(fixture.componentInstance.submitting).toBe(true);
+		await fixture.componentInstance.approve();
+		refresh.resolve(details['CR-1']);
+		await pending;
+		fixture.detectChanges();
+		expect(getChangeRequest).toHaveBeenLastCalledWith(users.approver, 'CR-1');
+		expect(fixture.nativeElement.querySelector('.cr-actions__error').textContent).toContain('Current status: PENDING_APPROVAL');
+		expect(fixture.nativeElement.querySelector('.cr-actions__error').getAttribute('role')).toBe('alert');
+		expect(fixture.nativeElement.querySelector('.cr-actions__approve').disabled).toBe(false);
+		expect(approve).toHaveBeenCalledTimes(1);
+	});
+
+	it('reports an unknown outcome if reconciliation fails and Retry performs only a read', async () => {
+		const { fixture, approve, getChangeRequest } = await approvalFixture();
+		const failure = deferred<CrDetail>();
+		const refresh = deferred<CrDetail>();
+		approve.mockReturnValueOnce(failure.promise);
+		getChangeRequest.mockReturnValueOnce(refresh.promise);
+		const pending = fixture.componentInstance.approve();
+		failure.reject(new Error('Network error'));
+		await Promise.resolve();
+		refresh.reject(new Error('Read unavailable'));
+		await pending;
+		fixture.detectChanges();
+		expect(fixture.nativeElement.querySelector('.cr-detail__error').textContent).toContain('Approval outcome is unknown');
+		expect(fixture.nativeElement.querySelector('.cr-detail__error').textContent).toContain('Read unavailable');
+		expect(fixture.nativeElement.querySelector('.cr-actions')).toBeNull();
+		await fixture.componentInstance.approve();
+		getChangeRequest.mockResolvedValueOnce(approvedDetail);
+		fixture.nativeElement.querySelector('.cr-detail__error button').click();
+		await Promise.resolve();
+		fixture.detectChanges();
+		expect(fixture.nativeElement.querySelector('.cr-detail__header .cr-status').textContent).toBe('APPROVED');
+		expect(approve).toHaveBeenCalledTimes(1);
+	});
+
+	it('reconciles the real failNext mutation without issuing a second approval', async () => {
+		jest.useFakeTimers();
+		try {
+			TestBed.configureTestingModule({
+				imports: [CrDetailComponent],
+				providers: [{ provide: SessionService, useValue: { user: users.approver } }],
+			});
+			await TestBed.compileComponents();
+			const api = TestBed.inject(CrApiService);
+			api.latencyMs = 25;
+			const approveSpy = jest.spyOn(api, 'approve');
+			const readSpy = jest.spyOn(api, 'getChangeRequest');
+			const fixture = TestBed.createComponent(CrDetailComponent);
+			fixture.componentRef.setInput('id', 'CR-1');
+			fixture.detectChanges();
+			jest.advanceTimersByTime(25);
+			await Promise.resolve();
+			fixture.detectChanges();
+			api.failNext = true;
+			const pending = fixture.componentInstance.approve();
+			expect(fixture.componentInstance.detail.status).toBe('PENDING_APPROVAL');
+			jest.advanceTimersByTime(25);
+			await Promise.resolve();
+			expect(api.failNext).toBe(false);
+			expect(fixture.componentInstance.submitting).toBe(true);
+			jest.advanceTimersByTime(25);
+			await pending;
+			fixture.detectChanges();
+			expect(fixture.nativeElement.querySelector('.cr-detail__header .cr-status').textContent).toBe('APPROVED');
+			expect(fixture.nativeElement.querySelector('.cr-actions__error').textContent).toContain('Approval response failed: Network error');
+			expect(fixture.nativeElement.querySelector('.cr-actions__error').textContent).toContain('Current status: APPROVED');
+			expect(fixture.componentInstance.detail.audit.filter((entry) => entry.action === 'APPROVE').length).toBe(1);
+			expect(fixture.componentInstance.submitting).toBe(false);
+			void fixture.componentInstance.approve();
+			expect(approveSpy).toHaveBeenCalledTimes(1);
+			expect(readSpy).toHaveBeenCalledTimes(2);
+		} finally {
+			jest.useRealTimers();
+		}
+	});
+
+	it.each(['resolve', 'reject'])('ignores an old approval %s after selecting another CR', async (outcome) => {
+		const { fixture, approve, getChangeRequest, select } = await approvalFixture();
+		const response = deferred<CrDetail>();
+		approve.mockReturnValueOnce(response.promise);
+		const pending = fixture.componentInstance.approve();
+		getChangeRequest.mockResolvedValueOnce(details['CR-3']);
+		select('CR-3');
+		await Promise.resolve();
+		fixture.detectChanges();
+		expect(fixture.nativeElement.querySelector('h2').textContent).toBe(details['CR-3'].title);
+		if (outcome === 'resolve') response.resolve(approvedDetail);
+		else response.reject(new Error('Old approval failed'));
+		await pending;
+		fixture.detectChanges();
+		expect(fixture.nativeElement.querySelector('h2').textContent).toBe(details['CR-3'].title);
+		expect(fixture.componentInstance.detail.status).toBe('DRAFT');
+		expect(fixture.componentInstance.submitting).toBe(false);
+		expect(fixture.nativeElement.querySelector('.cr-actions__error')).toBeNull();
+		expect(getChangeRequest).toHaveBeenCalledTimes(2);
+	});
+
+	it('ignores a reconciliation response after selection changes', async () => {
+		const { fixture, approve, getChangeRequest, select } = await approvalFixture();
+		const failure = deferred<CrDetail>();
+		const refresh = deferred<CrDetail>();
+		approve.mockReturnValueOnce(failure.promise);
+		getChangeRequest.mockReturnValueOnce(refresh.promise);
+		const pending = fixture.componentInstance.approve();
+		failure.reject(new Error('Network error'));
+		await Promise.resolve();
+		getChangeRequest.mockResolvedValueOnce(details['CR-2']);
+		select('CR-2');
+		await Promise.resolve();
+		refresh.resolve(approvedDetail);
+		await pending;
+		fixture.detectChanges();
+		expect(fixture.componentInstance.detail.id).toBe('CR-2');
+		expect(fixture.nativeElement.querySelector('.cr-actions__error')).toBeNull();
+	});
+
+	it.each(['resolve', 'reject'])('does not update component state after destruction when approval completes with %s', async (outcome) => {
+		const { fixture, approve, getChangeRequest } = await approvalFixture();
+		const response = deferred<CrDetail>();
+		approve.mockReturnValueOnce(response.promise);
+		const pending = fixture.componentInstance.approve();
+		fixture.destroy();
+		const previousState = fixture.componentInstance.state;
+		if (outcome === 'resolve') response.resolve(approvedDetail);
+		else response.reject(new Error('Old approval failed'));
+		await pending;
+		expect(fixture.componentInstance.state).toBe(previousState);
+		expect(fixture.componentInstance.actionError).toBeUndefined();
+		expect(getChangeRequest).toHaveBeenCalledTimes(1);
+		await fixture.componentInstance.approve();
+		expect(approve).toHaveBeenCalledTimes(1);
+	});
+});
