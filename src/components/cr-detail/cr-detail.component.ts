@@ -67,6 +67,10 @@ export class CrDetailComponent implements OnChanges, OnDestroy {
 		return this.detail ? computeDiff(this.detail.baselineLineItems, this.detail.proposedLineItems) : [];
 	}
 
+	get hasLineItemChanges(): boolean {
+		return this.diff.some((row) => row.kind !== 'unchanged');
+	}
+
 	/** Approval timeline, oldest-first. */
 	get timeline(): TimelineEntry[] {
 		// TODO: return the audit entries ordered chronologically (oldest first).

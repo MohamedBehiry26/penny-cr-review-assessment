@@ -12,15 +12,18 @@
 			<h2>{{ cr.title }}</h2>
 			<span class="cr-status" [attr.data-status]="cr.status">{{ cr.status }}</span>
 			<p class="cr-detail__totals">
-				{{ fmt(cr.baselineTotal) }} → {{ fmt(cr.newTotal) }}
-				<strong class="cr-detail__delta">(Δ {{ fmt(cr.delta) }})</strong>
+				<span class="cr-detail__baseline-total">Before total: {{ fmt(cr.baselineTotal) }}</span>
+				<span class="cr-detail__proposed-total">Proposed total: {{ fmt(cr.newTotal) }}</span>
+				<strong class="cr-detail__delta">Delta: {{ fmt(cr.delta) }}</strong>
 			</p>
 		</header>
 
 		<!-- Diff / preview panel -->
-		<section class="cr-diff">
+		<section class="cr-diff" *ngIf="diff as rows">
 			<h3>Proposed changes</h3>
-			<table class="cr-diff__table">
+			<p *ngIf="rows.length === 0" class="cr-diff__empty">No line items in the baseline or proposal.</p>
+			<p *ngIf="rows.length > 0 && !hasLineItemChanges" class="cr-diff__unchanged">No line-item changes.</p>
+			<table *ngIf="rows.length > 0" class="cr-diff__table">
 				<thead>
 					<tr>
 						<th>SKU</th>
@@ -30,11 +33,25 @@
 					</tr>
 				</thead>
 				<tbody>
-					<tr *ngFor="let row of diff" class="cr-diff__row" [attr.data-kind]="row.kind">
+					<tr *ngFor="let row of rows" class="cr-diff__row" [attr.data-kind]="row.kind">
 						<td>{{ row.sku }}</td>
-						<td class="cr-diff__kind">{{ row.kind }}</td>
-						<td>{{ row.baseline ? row.baseline.quantity + ' × ' + fmt(row.baseline.unitPrice) : '—' }}</td>
-						<td>{{ row.proposed ? row.proposed.quantity + ' × ' + fmt(row.proposed.unitPrice) : '—' }}</td>
+						<td class="cr-diff__kind">{{ row.kind | titlecase }}</td>
+						<td class="cr-diff__before">
+							<ng-container *ngIf="row.baseline as item; else noBaseline">
+								<div class="cr-diff__description">Description: {{ item.description }}</div>
+								<div class="cr-diff__quantity">Quantity: {{ item.quantity }}</div>
+								<div class="cr-diff__unit-price">Unit price: {{ fmt(item.unitPrice) }}</div>
+							</ng-container>
+							<ng-template #noBaseline>—</ng-template>
+						</td>
+						<td class="cr-diff__after">
+							<ng-container *ngIf="row.proposed as item; else noProposal">
+								<div class="cr-diff__description">Description: {{ item.description }}</div>
+								<div class="cr-diff__quantity">Quantity: {{ item.quantity }}</div>
+								<div class="cr-diff__unit-price">Unit price: {{ fmt(item.unitPrice) }}</div>
+							</ng-container>
+							<ng-template #noProposal>—</ng-template>
+						</td>
 					</tr>
 				</tbody>
 			</table>
