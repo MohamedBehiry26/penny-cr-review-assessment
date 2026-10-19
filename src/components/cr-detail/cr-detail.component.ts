@@ -51,7 +51,10 @@ export class CrDetailComponent implements OnChanges, OnDestroy {
 	}
 
 	async load(): Promise<void> {
+		if (this.destroyed) return;
 		const request = ++this.loadRequest;
+		const user = this.session.user;
+		const isCurrent = () => request === this.loadRequest && !this.destroyed && this.session.user === user;
 		this.actionError = undefined;
 		if (!this.id) {
 			this.state = { status: 'empty', data: null };
@@ -59,8 +62,8 @@ export class CrDetailComponent implements OnChanges, OnDestroy {
 		}
 		this.state = loading();
 		try {
-			const detail = await this.api.getChangeRequest(this.session.user, this.id);
-			if (request !== this.loadRequest) return;
+			const detail = await this.api.getChangeRequest(user, this.id);
+			if (!isCurrent()) return;
 			this.state = { status: 'loaded', data: detail };
 			const uncertain = this.uncertainAction;
 			if (uncertain?.id === detail.id && uncertain.user === this.session.user) {
@@ -68,7 +71,7 @@ export class CrDetailComponent implements OnChanges, OnDestroy {
 				if (detail.status !== uncertain.status) this.updated.emit(detail);
 			}
 		} catch (err) {
-			if (request !== this.loadRequest) return;
+			if (!isCurrent()) return;
 			this.state = { status: 'error', data: null, error: (err as Error).message };
 		}
 	}
@@ -132,27 +135,33 @@ export class CrDetailComponent implements OnChanges, OnDestroy {
 		const reason = this.rejectControl.value.trim();
 		const label = action === 'approve' ? 'Approval' : 'Rejection';
 		const request = this.loadRequest;
-		const isCurrent = () => request === this.loadRequest && !this.destroyed && this.session.user === user;
+		const isSessionCurrent = () => !this.destroyed && this.session.user === user;
+		const isCurrent = () => request === this.loadRequest && isSessionCurrent();
 		this.submitting = true;
 		this.actionError = undefined;
 		try {
 			const at = new Date().toISOString();
 			const updated = await (action === 'approve' ? this.api.approve(user, detail.id, at) : this.api.reject(user, detail.id, at, reason));
-			if (!isCurrent()) return;
-			this.state = { status: 'loaded', data: updated };
-			if (action === 'reject' && updated.status === 'REJECTED') this.rejectControl.reset('');
+			if (!isSessionCurrent()) return;
+			// A different selection must not block List synchronization in the same session.
+			if (isCurrent()) {
+				this.state = { status: 'loaded', data: updated };
+				if (action === 'reject' && updated.status === 'REJECTED') this.rejectControl.reset('');
+			}
 			if (updated.status !== detail.status) this.updated.emit(updated);
 		} catch (err) {
-			if (!isCurrent()) return;
+			if (!isSessionCurrent()) return;
 			const message = (err as Error).message;
-			this.actionError = `${label} response failed: ${message}. Checking current status.`;
+			if (isCurrent()) this.actionError = `${label} response failed: ${message}. Checking current status.`;
 			// The mock store may already have changed. Read once; never retry the mutation automatically.
 			try {
 				const refreshed = await this.api.getChangeRequest(user, detail.id);
-				if (!isCurrent()) return;
-				this.state = { status: 'loaded', data: refreshed };
-				if (action === 'reject' && refreshed.status === 'REJECTED') this.rejectControl.reset('');
-				this.actionError = `${label} response failed: ${message}. Current status: ${refreshed.status}. ${label} was not retried.`;
+				if (!isSessionCurrent()) return;
+				if (isCurrent()) {
+					this.state = { status: 'loaded', data: refreshed };
+					if (action === 'reject' && refreshed.status === 'REJECTED') this.rejectControl.reset('');
+					this.actionError = `${label} response failed: ${message}. Current status: ${refreshed.status}. ${label} was not retried.`;
+				}
 				if (refreshed.status !== detail.status) this.updated.emit(refreshed);
 			} catch (refreshError) {
 				if (!isCurrent()) return;

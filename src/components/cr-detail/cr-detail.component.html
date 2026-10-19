@@ -12,8 +12,8 @@
 			<h2>{{ cr.title }}</h2>
 			<span class="cr-status" [attr.data-status]="cr.status">{{ cr.status }}</span>
 			<p class="cr-detail__totals">
-				<span class="cr-detail__baseline-total">Before total: {{ fmt(cr.baselineTotal) }}</span>
-				<span class="cr-detail__proposed-total">Proposed total: {{ fmt(cr.newTotal) }}</span>
+				<span class="cr-detail__baseline-total">Before total: {{ fmt(cr.baselineTotal) }}</span> ·
+				<span class="cr-detail__proposed-total">Proposed total: {{ fmt(cr.newTotal) }}</span> ·
 				<strong class="cr-detail__delta">Delta: {{ fmt(cr.delta) }}</strong>
 			</p>
 		</header>
@@ -63,10 +63,11 @@
 			<p *ngIf="entries.length === 0" class="cr-timeline__empty">No audit history available.</p>
 			<ol *ngIf="entries.length > 0" class="cr-timeline__list">
 				<li *ngFor="let entry of entries" class="cr-timeline__entry">
-					<span class="cr-timeline__action">{{ entry.action }}</span>
-					<span class="cr-timeline__by">{{ entry.byUserId }}</span>
+					<span class="cr-timeline__action">{{ entry.action }}</span> · <span class="cr-timeline__by">{{ entry.byUserId }}</span> ·
 					<time class="cr-timeline__at" [attr.datetime]="entry.at">{{ entry.at }}</time>
-					<span *ngIf="entry.note" class="cr-timeline__note">{{ entry.note }}</span>
+					<ng-container *ngIf="entry.note">
+						· <span class="cr-timeline__note">{{ entry.note }}</span></ng-container
+					>
 				</li>
 			</ol>
 		</section>

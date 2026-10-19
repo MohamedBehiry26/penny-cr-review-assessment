@@ -38,7 +38,7 @@ export class AppComponent {
 	}
 
 	onDetailUpdated(detail: CrDetail, list: CrListComponent): void {
-		if (this.show && detail.id === this.selectedId && detail.orgCode === this.session.user.orgCode) void list.load();
+		if (this.show && detail.orgCode === this.session.user.orgCode) void list.load();
 	}
 
 	/** Destroy + recreate the panes so they re-load as the newly selected user. */

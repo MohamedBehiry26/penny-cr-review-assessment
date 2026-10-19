@@ -4,8 +4,8 @@ import { AppComponent } from './app.component';
 import { CrApiService } from '../api/cr-api.service';
 import { CrDetailComponent } from '../components/cr-detail/cr-detail.component';
 import { CrListComponent } from '../components/cr-list/cr-list.component';
-import { summaries } from '../api/fixtures';
-import { CrSummary } from '../models/cr.models';
+import { details, summaries } from '../api/fixtures';
+import { CrDetail, CrSummary } from '../models/cr.models';
 
 async function advanceApi(fixture: ComponentFixture<AppComponent>): Promise<void> {
 	jest.advanceTimersByTime(25);
@@ -46,6 +46,44 @@ function clickAction(fixture: ComponentFixture<AppComponent>, action: string): v
 
 describe('AppComponent List/Detail integration', () => {
 	afterEach(() => jest.useRealTimers());
+
+	it('does not claim a changed status when an old selection action and its reconciliation both fail', async () => {
+		const { fixture, api, listSpy } = await appFixture();
+		api.failNext = true;
+		clickAction(fixture, 'approve');
+		fixture.nativeElement.querySelectorAll('.cr-list__row')[1].click();
+		fixture.detectChanges();
+		await advanceApi(fixture);
+		api.failNext = true;
+		await advanceApi(fixture);
+		expect(listSpy).toHaveBeenCalledTimes(1);
+		expect(fixture.componentInstance.selectedId).toBe('CR-2');
+		expect(fixture.nativeElement.querySelector('.cr-detail__header .cr-status').textContent).toBe('APPLIED');
+		expect(fixture.nativeElement.querySelector('.cr-detail__error')).toBeNull();
+	});
+
+	it.each(['resolve', 'reject'])('discards a previous session Detail %s after switching orgs', async (outcome) => {
+		const { fixture, api } = await appFixture();
+		let resolveOld!: (detail: CrDetail) => void;
+		let rejectOld!: (error: Error) => void;
+		jest.spyOn(api, 'getChangeRequest').mockReturnValueOnce(
+			new Promise((resolve, reject) => {
+				resolveOld = resolve;
+				rejectOld = reject;
+			}),
+		);
+		fixture.nativeElement.querySelectorAll('.cr-list__row')[1].click();
+		fixture.detectChanges();
+		fixture.componentInstance.switchUser('otherOrg');
+		fixture.detectChanges();
+		if (outcome === 'resolve') resolveOld(details['CR-2']);
+		else rejectOld(new Error('Previous session error'));
+		await advanceApi(fixture);
+		await advanceApi(fixture);
+		expect(fixture.nativeElement.querySelector('app-cr-detail')).toBeNull();
+		expect(fixture.nativeElement.querySelector('.cr-list__row button').textContent.trim()).toBe('CR-9');
+		expect(fixture.nativeElement.querySelector('.cr-list__error')).toBeNull();
+	});
 
 	it.each([
 		['approve', 'APPROVED', 'ALL'],
@@ -118,15 +156,26 @@ describe('AppComponent List/Detail integration', () => {
 		expect(fixture.nativeElement.querySelector('.cr-actions__error').textContent).toContain('Current status: PENDING_APPROVAL');
 	});
 
-	it('wires row selection and ignores late action notifications after selecting another CR', async () => {
-		const { fixture, listSpy } = await appFixture();
-		clickAction(fixture, 'approve');
+	it.each([
+		['approve', false, 'APPROVED'],
+		['reject', false, 'REJECTED'],
+		['approve', true, 'APPROVED'],
+		['reject', true, 'REJECTED'],
+	])('refreshes CR-A after %s (failed response: %s) without replacing CR-B', async (action: string, fail: boolean, status: string) => {
+		const { fixture, api, listSpy } = await appFixture();
+		api.failNext = fail;
+		clickAction(fixture, action);
 		fixture.nativeElement.querySelectorAll('.cr-list__row')[1].click();
 		fixture.detectChanges();
 		await advanceApi(fixture);
+		await advanceApi(fixture);
+		if (fail) await advanceApi(fixture);
 		expect(fixture.componentInstance.selectedId).toBe('CR-2');
 		expect(fixture.nativeElement.querySelector('.cr-detail__header h2').textContent).toBe('Replace SKU-B supplier');
-		expect(listSpy).toHaveBeenCalledTimes(1);
+		expect(fixture.nativeElement.querySelector('.cr-detail__header .cr-status').textContent).toBe('APPLIED');
+		expect(fixture.nativeElement.querySelector('.cr-actions__error')).toBeNull();
+		expect(fixture.nativeElement.querySelector('.cr-list__row .cr-status').textContent).toBe(status);
+		expect(listSpy).toHaveBeenCalledTimes(2);
 	});
 
 	it('clears selection on user/org switching and ignores an old session action', async () => {
@@ -141,7 +190,7 @@ describe('AppComponent List/Detail integration', () => {
 		expect(fixture.componentInstance.selectedId).toBeNull();
 		expect(fixture.nativeElement.querySelector('app-cr-detail')).toBeNull();
 		expect(fixture.nativeElement.querySelectorAll('.cr-list__row').length).toBe(1);
-		expect(fixture.nativeElement.querySelector('.cr-list__row td').textContent).toBe('CR-9');
+		expect(fixture.nativeElement.querySelector('.cr-list__row button').textContent.trim()).toBe('CR-9');
 		expect(listSpy).toHaveBeenCalledTimes(2);
 	});
 
@@ -159,7 +208,7 @@ describe('AppComponent List/Detail integration', () => {
 		await pending;
 		fixture.detectChanges();
 		expect(fixture.nativeElement.querySelectorAll('.cr-list__row').length).toBe(1);
-		expect(fixture.nativeElement.querySelector('.cr-list__row td').textContent).toBe('CR-9');
+		expect(fixture.nativeElement.querySelector('.cr-list__row button').textContent.trim()).toBe('CR-9');
 	});
 
 	it('keeps confirmed Detail visible if List refresh fails and preserves the filter through an empty retry', async () => {

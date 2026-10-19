@@ -92,6 +92,24 @@ async function selectionFixture() {
 }
 
 describe('CrDetailComponent selection loading', () => {
+	it.each(['resolve', 'reject'])('ignores a previous user load %s even before destruction', async (outcome) => {
+		const { fixture, getChangeRequest, select } = await selectionFixture();
+		const response = deferred<CrDetail>();
+		getChangeRequest.mockReturnValueOnce(response.promise);
+		select('CR-1');
+		TestBed.inject(SessionService).user = users.otherOrg;
+		if (outcome === 'resolve') response.resolve(details['CR-1']);
+		else response.reject(new Error('Previous session error'));
+		await response.promise.catch(() => undefined);
+		fixture.detectChanges();
+		expect(fixture.componentInstance.detail).toBeNull();
+		expect(fixture.nativeElement.querySelector('.cr-detail__error')).toBeNull();
+		getChangeRequest.mockResolvedValueOnce(details['CR-9']);
+		select('CR-9');
+		await Promise.resolve();
+		fixture.detectChanges();
+		expect(fixture.nativeElement.querySelector('h2').textContent).toBe(details['CR-9'].title);
+	});
 	it('loads the initial input exactly once', async () => {
 		const { fixture, getChangeRequest, select } = await selectionFixture();
 		const response = deferred<CrDetail>();
@@ -322,6 +340,9 @@ describe('CrDetailComponent diff preview and totals', () => {
 			expect(fixture.nativeElement.querySelector('.cr-detail__baseline-total').textContent).toBe(`Before total: ${before}`);
 			expect(fixture.nativeElement.querySelector('.cr-detail__proposed-total').textContent).toBe(`Proposed total: ${after}`);
 			expect(fixture.nativeElement.querySelector('.cr-detail__delta').textContent).toBe(`Delta: ${difference}`);
+			expect(fixture.nativeElement.querySelector('.cr-detail__totals').textContent.replace(/\s+/g, ' ').trim()).toBe(
+				`Before total: ${before} · Proposed total: ${after} · Delta: ${difference}`,
+			);
 		},
 	);
 
@@ -445,6 +466,9 @@ describe('CrDetailComponent audit timeline', () => {
 		expect(entries[1].querySelector('.cr-timeline__at').textContent).toBe('2026-03-02T10:00:00.000Z');
 		expect(entries[1].querySelector('time').getAttribute('datetime')).toBe('2026-03-02T10:00:00.000Z');
 		expect(entries[1].querySelector('.cr-timeline__note').textContent).toBe('Please revise the quantity.');
+		expect(entries[1].textContent.replace(/\s+/g, ' ').trim()).toBe(
+			'REJECT · mona · 2026-03-02T10:00:00.000Z · Please revise the quantity.',
+		);
 		expect(fixture.nativeElement.querySelector('.cr-timeline__empty')).toBeNull();
 	});
 
@@ -654,20 +678,25 @@ describe('CrDetailComponent approve action', () => {
 		const response = deferred<CrDetail>();
 		approve.mockReturnValueOnce(response.promise);
 		const pending = fixture.componentInstance.approve();
+		const updatedSpy = jest.spyOn(fixture.componentInstance.updated, 'emit');
 		getChangeRequest.mockResolvedValueOnce(details['CR-3']);
 		select('CR-3');
 		await Promise.resolve();
 		fixture.detectChanges();
 		expect(fixture.nativeElement.querySelector('h2').textContent).toBe(details['CR-3'].title);
 		if (outcome === 'resolve') response.resolve(approvedDetail);
-		else response.reject(new Error('Old approval failed'));
+		else {
+			getChangeRequest.mockResolvedValueOnce(approvedDetail);
+			response.reject(new Error('Old approval failed'));
+		}
 		await pending;
 		fixture.detectChanges();
 		expect(fixture.nativeElement.querySelector('h2').textContent).toBe(details['CR-3'].title);
 		expect(fixture.componentInstance.detail.status).toBe('DRAFT');
 		expect(fixture.componentInstance.submitting).toBe(false);
 		expect(fixture.nativeElement.querySelector('.cr-actions__error')).toBeNull();
-		expect(getChangeRequest).toHaveBeenCalledTimes(2);
+		expect(getChangeRequest).toHaveBeenCalledTimes(outcome === 'resolve' ? 2 : 3);
+		expect(updatedSpy).toHaveBeenCalledWith(approvedDetail);
 	});
 
 	it('ignores a reconciliation response after selection changes', async () => {
@@ -958,17 +987,22 @@ describe('CrDetailComponent reject action', () => {
 		const response = deferred<CrDetail>();
 		reject.mockReturnValueOnce(response.promise);
 		const pending = fixture.componentInstance.reject();
+		const updatedSpy = jest.spyOn(fixture.componentInstance.updated, 'emit');
 		getChangeRequest.mockResolvedValueOnce(details['CR-3']);
 		select('CR-3');
 		await Promise.resolve();
 		if (outcome === 'resolve') response.resolve(rejectedDetail);
-		else response.reject(new Error('Old rejection failed'));
+		else {
+			getChangeRequest.mockResolvedValueOnce(rejectedDetail);
+			response.reject(new Error('Old rejection failed'));
+		}
 		await pending;
 		fixture.detectChanges();
 		expect(fixture.componentInstance.detail.id).toBe('CR-3');
 		expect(fixture.componentInstance.rejectControl.value).toBe('');
 		expect(fixture.nativeElement.querySelector('.cr-actions__error')).toBeNull();
-		expect(getChangeRequest).toHaveBeenCalledTimes(2);
+		expect(getChangeRequest).toHaveBeenCalledTimes(outcome === 'resolve' ? 2 : 3);
+		expect(updatedSpy).toHaveBeenCalledWith(rejectedDetail);
 	});
 
 	it.each(['resolve', 'reject'])('ignores rejection %s after destruction', async (outcome) => {

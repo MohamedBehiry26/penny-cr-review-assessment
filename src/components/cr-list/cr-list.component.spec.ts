@@ -166,6 +166,17 @@ async function refreshFixture(): Promise<ComponentFixture<CrListComponent>> {
 }
 
 describe('CrListComponent refresh safety', () => {
+	it('offers a native keyboard-focusable selection button without double emitting', async () => {
+		const fixture = await refreshFixture();
+		const button: HTMLButtonElement = fixture.nativeElement.querySelector('.cr-list__row button');
+		const selectSpy = jest.spyOn(fixture.componentInstance.select, 'emit');
+		expect(button.type).toBe('button');
+		expect(button.tabIndex).toBe(0);
+		expect(button.getAttribute('aria-label')).toBe('Review CR-1');
+		button.click();
+		expect(selectSpy).toHaveBeenCalledTimes(1);
+		expect(selectSpy).toHaveBeenCalledWith('CR-1');
+	});
 	it.each(['resolve', 'reject'])('ignores an older refresh that completes with %s', async (outcome) => {
 		const fixture = await refreshFixture();
 		const api = TestBed.inject(CrApiService);

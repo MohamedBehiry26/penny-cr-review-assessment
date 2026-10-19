@@ -33,7 +33,11 @@
 		</thead>
 		<tbody>
 			<tr *ngFor="let cr of visibleRows" class="cr-list__row" (click)="select.emit(cr.id)">
-				<td>{{ cr.id }}</td>
+				<td>
+					<button type="button" [attr.aria-label]="'Review ' + cr.id" (click)="select.emit(cr.id); $event.stopPropagation()">
+						{{ cr.id }}
+					</button>
+				</td>
 				<td>{{ cr.title }}</td>
 				<td>
 					<span class="cr-status" [attr.data-status]="cr.status">{{ cr.status }}</span>
