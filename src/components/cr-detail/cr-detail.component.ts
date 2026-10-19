@@ -1,4 +1,4 @@
-import { Component, Input, OnInit } from '@angular/core';
+import { Component, Input, OnChanges, OnDestroy, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { CrApiService } from '../../api/cr-api.service';
@@ -20,7 +20,7 @@ import { canApprovePolicy } from '../../common/permissions';
 	imports: [CommonModule, ReactiveFormsModule],
 	templateUrl: './cr-detail.component.html',
 })
-export class CrDetailComponent implements OnInit {
+export class CrDetailComponent implements OnChanges, OnDestroy {
 	@Input() id!: string;
 
 	state: ViewState<CrDetail> = idle();
@@ -28,20 +28,33 @@ export class CrDetailComponent implements OnInit {
 	actionError?: string;
 	// TODO: add validation so the form is invalid until a reason is entered.
 	rejectControl = new FormControl('', { nonNullable: true });
+	private loadRequest = 0;
 
 	constructor(private readonly api: CrApiService, private readonly session: SessionService) {}
 
-	ngOnInit(): void {
-		void this.load();
+	ngOnChanges(changes: SimpleChanges): void {
+		if (changes['id']) void this.load();
+	}
+
+	ngOnDestroy(): void {
+		// Pending Promises cannot be cancelled; invalidate their results instead.
+		this.loadRequest++;
 	}
 
 	async load(): Promise<void> {
-		this.state = loading();
+		const request = ++this.loadRequest;
 		this.actionError = undefined;
+		if (!this.id) {
+			this.state = { status: 'empty', data: null };
+			return;
+		}
+		this.state = loading();
 		try {
 			const detail = await this.api.getChangeRequest(this.session.user, this.id);
+			if (request !== this.loadRequest) return;
 			this.state = { status: 'loaded', data: detail };
 		} catch (err) {
+			if (request !== this.loadRequest) return;
 			this.state = { status: 'error', data: null, error: (err as Error).message };
 		}
 	}
