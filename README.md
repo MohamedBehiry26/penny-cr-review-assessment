@@ -44,6 +44,10 @@ CR-1 compares quantity 10 with 11: the total increases from USD 8,000 to USD 8,5
 
 ![Change Request diff preview and financial totals](./docs/screenshots/change-diff.png)
 
+**Description-only change:** CR-2 changes the supplier description while quantity, unit price, and the USD 3,000 total remain unchanged (USD 0 delta).
+
+![Description-only change with unchanged financial totals](./docs/screenshots/description-only-diff.png)
+
 </details>
 
 <details>
