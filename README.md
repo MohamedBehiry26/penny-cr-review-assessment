@@ -2,9 +2,12 @@
 
 An Angular application for reviewing proposed changes to Purchase Agreements: find a Change Request, compare its line items and financial impact, review its history, and approve or reject it.
 
-## Live Demo
+## Demo & Submission Links
 
-[Open the Change Request Review Dashboard](https://penny-cr-review-assessment.vercel.app/)
+- **Live Demo:** [Open the Change Request Review Dashboard](https://penny-cr-review-assessment.vercel.app/)
+- **Video Walkthrough (7 minutes 12 seconds):** [Watch the narrated implementation walkthrough](https://drive.google.com/file/d/1jZXt4dRGgpaJMIxM6MPBqqlFDTT9EMcX/view?usp=sharing)
+- **Technical Presentation (PDF, optional):** [View the engineering presentation](https://drive.google.com/file/d/1XyETBGf_RJDHZtWdEoO7f1b_qqMyqEY1/view?usp=sharing)
+- **Source Code:** [GitHub repository](https://github.com/MohamedBehiry26/penny-cr-review-assessment)
 
 The public Vercel deployment uses the supplied browser-side mock API. Approve/Reject changes are in memory for the current page instance; reloading restores the fixtures. No production backend, persistent storage, or real authentication is included.
 
@@ -205,9 +208,9 @@ Shared utilities provide pure SKU-based diff classification, currency formatting
 
 The brief explicitly requests:
 
-- A Git repository with the full commit history, without squashing.
+- A [Git repository](https://github.com/MohamedBehiry26/penny-cr-review-assessment) with the full commit history, without squashing.
 - Root-level `IMPLEMENTATION_NOTES.md`.
-- A **5-8 minute walkthrough video** covering List and Detail, a rejection, an error state, and one non-trivial decision.
+- A **[5–8 minute walkthrough video](https://drive.google.com/file/d/1jZXt4dRGgpaJMIxM6MPBqqlFDTT9EMcX/view?usp=sharing)** covering List and Detail, a rejection, an error state, and one non-trivial decision.
 - Working `npm ci` and `npm test` from a clean clone.
 
 The follow-up technical interview includes explaining the submitted implementation, making a live change, debugging behavior, and discussing a trade-off. AI assistance is permitted and disclosed in the implementation notes.
