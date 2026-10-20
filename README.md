@@ -20,36 +20,77 @@ The dashboard pairs a filterable Change Request List with a Detail panel. The **
 
 ## Screenshots
 
-Captured from the running application using the supplied fixtures; no application data or styles were changed for these images.
+Real captures from the running application using the supplied mock fixtures. Application styles and fixture data were not edited for presentation; the approval result reflects an actual in-memory mock action.
 
-**Dashboard overview** - desktop List, selected Change Request, and Detail panel (1440 x 900 CSS viewport).
+### Dashboard overview
+
+Desktop List, persistent selection, and Detail panel at a 1440 x 900 CSS viewport.
 
 ![Change Request dashboard overview](./docs/screenshots/dashboard-overview.png)
 
 <details>
-<summary>Diff preview and financial totals</summary>
+<summary>Status filtering</summary>
 
-The supplied CR-1 fixture shows Changed and Unchanged rows with before/after values and totals. Existing fixtures do not include Added or Removed rows, so those categories are not pictured.
+The active PENDING_APPROVAL filter shows the matching request while its Detail remains selected.
+
+![Pending Change Requests filtered by status](./docs/screenshots/status-filtering.png)
+
+</details>
+
+<details>
+<summary>Change Request details and financial impact</summary>
+
+CR-1 compares quantity 10 with 11: the total increases from USD 8,000 to USD 8,500, a USD 500 delta. Changed and Unchanged rows retain their before/after values. Existing fixtures do not include Added or Removed rows, so those categories are not pictured.
 
 ![Change Request diff preview and financial totals](./docs/screenshots/change-diff.png)
 
 </details>
 
 <details>
-<summary>Approval workflow and rejection validation</summary>
+<summary>Approval, audit timeline, and rejection validation</summary>
 
-The rejection reason field displays nonblank validation feedback. No Approve or Reject action was submitted during capture.
+**Confirmed approval:** CR-1 is APPROVED in both List and Detail, with a new APPROVE event in the chronological timeline. This action affected only the local mock store, which was reset afterward.
+
+![Approved Change Request with updated List and audit timeline](./docs/screenshots/approval-result.png)
+
+**Invalid rejection reason:** nonblank validation feedback appears and Reject is disabled. No action was submitted in this capture.
 
 ![Rejection reason validation and action controls](./docs/screenshots/approval-workflow.png)
+
+**Valid rejection reason:** entering a nonblank reason enables Reject. This image shows the prepared form, not a submitted rejection or a successful result.
+
+![Valid rejection reason with enabled Reject control](./docs/screenshots/rejection-reason.png)
+
+</details>
+
+<details>
+<summary>Network error and retry recovery</summary>
+
+The mock API's existing one-time failNext mechanism produces the real Network error state and Retry button; this is not a simulated image or a real backend outage.
+
+![Change Request List Network error and Retry button](./docs/screenshots/network-error.png)
+
+Activating Retry loads the List successfully in the same viewer session, without repeating a mutation.
+
+![Change Request List recovered successfully after Retry](./docs/screenshots/retry-recovery.png)
+
+</details>
+
+<details>
+<summary>Read-only viewer role</summary>
+
+A viewer can inspect the pending CR, diff, and history. Approve is disabled and no rejection form is shown. The capture is scrolled to the controls; frontend gating does not replace backend authorization.
+
+![Read-only viewer inspecting a pending request with Approve disabled](./docs/screenshots/read-only-viewer.png)
 
 </details>
 
 <details>
 <summary>Responsive mobile layout</summary>
 
-Full-page capture from an approximately 390 x 844 CSS viewport. Wide tables retain their horizontal scrolling within the panels.
+Full-page capture from an approximately 390 x 844 CSS viewport. Wide tables retain horizontal scrolling within the panels.
 
-![Responsive Change Request dashboard on mobile](./docs/screenshots/responsive-mobile.png)
+<img src="./docs/screenshots/responsive-mobile.png" alt="Responsive Change Request dashboard on mobile" width="360">
 
 </details>
 
