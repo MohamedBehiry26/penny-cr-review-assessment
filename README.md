@@ -2,6 +2,12 @@
 
 An Angular application for reviewing proposed changes to Purchase Agreements: find a Change Request, compare its line items and financial impact, review its history, and approve or reject it.
 
+## Live Demo
+
+[Open the Change Request Review Dashboard](https://penny-cr-review-assessment.vercel.app/)
+
+The public Vercel deployment uses the supplied browser-side mock API. Approve/Reject changes are in memory for the current page instance; reloading restores the fixtures. No production backend, persistent storage, or real authentication is included.
+
 ## Overview
 
 Built for the Penny AI frontend assessment, this project completes the supplied Angular scaffold against its organization-scoped **mock API**. No production backend is included.
@@ -123,6 +129,36 @@ npm start
 
 Open [http://localhost:4200](http://localhost:4200). Stop the development server with Ctrl+C.
 Keep the supplied `package-lock.json` and `.npmrc` (`legacy-peer-deps=true`) for reproducible installation.
+
+## Vercel Deployment
+
+The app is built locally with **Node 18.20.3 / npm 10.7.0**, then deployed as static files through Vercel's Build Output API. Vercel does not rebuild Angular 15 or install this project's dependencies remotely.
+
+From the repository root, with Node 18.20.3 active:
+
+```bash
+npm ci
+npm test -- --runInBand
+npm run typecheck
+npm run lint
+npm run build
+node scripts/prepare-vercel-static.cjs
+```
+
+The preparation script copies `dist/cr-review` into `.vercel-static/.vercel/output/static` and generates `config.json` (version 3). Existing files are served first; other paths fall back to `index.html`. The application currently has a single view at `/`.
+
+In a separate terminal using **Node 22** (verified: 22.12.0), run the pinned CLI below. Vercel CLI 64.7.0 requires Node >=20; this separate runtime does not change Angular's build requirement.
+
+```bash
+npx --yes --package vercel@64.7.0 vercel login
+npx --yes --package vercel@64.7.0 vercel link --yes --cwd .vercel-static --project penny-cr-review-assessment --scope mohamedbehiry26s-projects
+npx --yes --package vercel@64.7.0 vercel project inspect --cwd .vercel-static --non-interactive --scope mohamedbehiry26s-projects
+npx --yes --package vercel@64.7.0 vercel deploy --cwd .vercel-static --prebuilt --prod --scope mohamedbehiry26s-projects
+```
+
+Confirm the project and workspace before deploying. Generated `.vercel/` and `.vercel-static/` directories are ignored; never commit CLI credentials or local environment files. This is a manual prebuilt deployment; Git pushes alone do not redeploy it.
+
+The public production URL above was verified in Chrome for List/filtering, Detail/totals, Approve/Reject, rejection validation, viewer gating, mock Error/Retry, and mobile layout. Error/Retry was exercised with a temporary runtime debugger setting of the existing `failNext` flag, not a backend outage or source change.
 
 ## Testing
 
